@@ -19,8 +19,10 @@ In this repository you find BBC BASIC (Z80) implementation source code for a Z80
 
 ## BIT90
 
-#### ROM / Cartridge version
-The implemention is done for the bit90 computer, meaning you could replace the bit90 16K BASIC ROM (2x 8K) with the ROM version of bbx80 or you can load the cartridge version from tape or make a Coleco ROM cartridge. The Game ROM (Coleco compatible) is only used to start the system, the BIT90 ROM is not used or only to boot the system from tape. The Coleco ROM routines will still be avaible after boot, so you can call them from the inline assembler.
+#### ROM and Cartridge version of bbx80
+The implemention is done for the bit90 computer, meaning you could replace the bit90 16K BASIC ROM (2x 8K) with the ROM version of bbx80 or you can load the cartridge version from tape or make a Coleco game cartridge with the cartridge ROM image. 
+#### Original ROM BIOS usage
+The Game ROM (Coleco compatible) is only used to start the system, the BIT90 ROM is not used or only to boot the system from tape. The Coleco ROM routines will still be avaible after boot, so you can call them from the inline assembler.
 #### Features
 Included are the core commands as in BBC BASIC Z80, without the CP/M OS commands. Additional commands: save/load to tape, plot, point, keyson, keysoff, bye, colour, gcol and cload/csave via rs232. There is a branch table to extend basic and a mixed text/graphics screen with 50x24 characters, 256x192 pixels and 16 colors.   
 #### Limitations
