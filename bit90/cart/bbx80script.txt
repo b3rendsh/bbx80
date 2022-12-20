@@ -1,0 +1,2 @@
+load bbx80.rom,8000
+go
