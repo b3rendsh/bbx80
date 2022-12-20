@@ -61,8 +61,7 @@ bbxCls:		RST	R_NMIstop
 
 ; ------------------------------------------------------------------------------
 ; PUTIME - Set elapsed-time clock.
-;   Inputs: DEHL = time to load (seconds)
-; Destroys: A,D,E,H,L,F
+; Inputs: DEHL = time to load (seconds)
 ;
 ; In the BBX80 NMI only seconds are counted, not centiseconds.
 ; ------------------------------------------------------------------------------
@@ -74,8 +73,7 @@ bbxSetTime:	CALL	bbxNMIdisable
 
 ; ------------------------------------------------------------------------------
 ; GETIME - Read elapsed-time clock.
-;  Outputs: DEHL = elapsed time (seconds)
-; Destroys: A,D,E,H,L,F
+; Outputs: DEHL = elapsed time (seconds)
 ;
 ; In the BBX80 NMI only seconds are counted, not centiseconds.
 ; ------------------------------------------------------------------------------
@@ -89,7 +87,6 @@ bbxGetTime:	CALL	bbxNMIdisable
 ; PUTCSR - Move cursor to specified position.
 ;   Inputs: DE = horizontal position (LHS=0)
 ;           HL = vertical position (TOP=0)
-; Destroys: A,D,E,H,L,F
 ; -------------------------------------------
 bbxSetCursor:	LD	A,E
 		CP	$32
@@ -108,7 +105,6 @@ _storeY:	LD	(bbxCURPOSY),A
 ; GETCSR - Return cursor coordinates.
 ;   Outputs:  DE = X coordinate (POS)
 ;             HL = Y coordinate (VPOS)
-;  Destroys: A,D,E,H,L,F
 ; -------------------------------------------
 bbxGetCursor:	LD	DE,(bbxCURPOS)	; D=Y and E=X
 		LD	L,D
@@ -203,7 +199,7 @@ _endKeySound:	POP	AF
 		JR	Z,_enterPressed
 		LD	HL,(bbxCURPOS)
 		LD	(bbxCURSAV),HL
-		RST	R_dspChar		; display pressed key
+		CALL	dspChar			; display pressed key and load it in the buffer
 		LD	HL,(bbxCURPOS)
 		LD	DE,(bbxMINPOS)
 		XOR	A
@@ -305,56 +301,9 @@ _endPosY:	ADD	A,E
 _endPosX:	LD	E,A
 		RET
 
-; -----------------------------------------------------------------------
-; Subroutine : dspChar
-; Display an ASCII character on the console
-; A printable character will also be stored in the buffer (HL)
-; -----------------------------------------------------------------------
-bbxDspChar:	PUSH	BC
-		PUSH	DE
-		PUSH	HL
-		PUSH	AF
-		PUSH	IX
-		PUSH	IY
-		LD	DE,(bbxCURPOS)
-		CP	$20			; Is it a control character?
-		JR	NC,_noControl
-		CP	$07
-		JR	Z,charBell
-		CP	$08
-		JP	Z,charBS
-		CP	$09
-		JP	Z,charTab
-		CP	$0A
-		JP	Z,charDown
-		CP	$0D
-		JP	Z,charEnter
-		JR	endChar			
-_noControl:	CP	$80
-		JP	C,charAscii
-		CP	$F0
-		JP	Z,charUp
-		CP	$F1
-		JP	Z,charDown
-		CP	$F2
-		JP	Z,charLeft
-		CP	$F3
-		JP	Z,charRight
-		CP	$F4
-		JP	Z,charDelete
-		CP	$F5
-		JP	Z,charInsert
-		JR	endChar
-endCharScroll:	CALL	scroll
-endCharPos:	LD	(bbxCURPOS),DE
-endChar:	POP	IY
-		POP	IX
-		POP	AF
-		POP	HL
-		POP	DE
-		POP	BC
-		RET
 
+; -------------------------------------------------------------
+; Part of dspchar subroutine, move here to conserve space
 charBell:	LD	A,$87
 		OUT	(IOPSG0),A
 		LD	A,$03
@@ -370,6 +319,69 @@ _repeatBell:	DEC	HL
 		OUT	(IOPSG0),A
 		JP	endChar
 
+
+; -----------------------------------------------------------------------
+; Subroutine : bbxDspChar
+; Display an ASCII character on the console
+; -----------------------------------------------------------------------
+bbxDspChar:	PUSH	BC
+		PUSH	DE
+		PUSH	HL
+		PUSH	AF
+		LD	DE,(bbxCURPOS)
+charControl:	CP	$07
+		JR	Z,charBell
+		CP	$09
+		JR	Z,charTab
+		CP	$0A
+		JP	Z,charDown
+		CP	$0D
+		JR	Z,charEnter
+		CP	$80
+		JR	NC,endChar
+		CALL	screenWrite
+		CALL	curPlus
+		JR	endCharScroll
+
+
+; -----------------------------------------------------------------------
+; Subroutine : dspChar
+; Display an ASCII character on the console and
+; a printable character will also be stored in the buffer (HL)
+; -----------------------------------------------------------------------
+dspChar:	PUSH	BC
+		PUSH	DE
+		PUSH	HL
+		PUSH	AF
+		LD	DE,(bbxCURPOS)
+		CP	$20			; Is it a control character?
+		JR	NC,_noControl
+		CP	$08
+		JR	Z,charBS
+		JR	charControl
+_noControl:	CP	$80
+		JR	C,charAscii
+		CP	$F0
+		JR	Z,charUp
+		CP	$F1
+		JR	Z,charDown
+		CP	$F2
+		JR	Z,charLeft
+		CP	$F3
+		JR	Z,charRight
+		CP	$F4
+		JR	Z,charDelete
+		CP	$F5
+		JR	Z,charInsert
+endCharScroll:	CALL	scroll
+endCharPos:	LD	(bbxCURPOS),DE
+endChar:	POP	AF
+		POP	HL
+		POP	DE
+		POP	BC
+		RET
+
+
 charBS:		LD	A,D
 		OR	E
 		JP	Z,charBell
@@ -377,91 +389,91 @@ charBS:		LD	A,D
 		CALL	bufCount
 		LD	A,L
 		CP	$FF			; BS before 1st char in buffer?
-		JP	Z,endCharPos	
+		JR	Z,endCharPos	
 		LD	A,$20
 		CALL	screenWrite
 		LD	(HL),A
-		JP	endCharPos
+		JR	endCharPos
 
-charTab:	LD   A,$09
-_repeatTab:	CP   E
-		JR   NC,_endTab
-		ADD  A,$0A
-		CP   $31
-		JR   NZ,_repeatTab
-		INC  D
-		LD   E,$00
-		JP   endCharScroll
-_endTab:	INC  A
-		LD   E,A
-		JP   endCharPos
+charTab:	LD	A,$09
+_repeatTab:	CP	E
+		JR	NC,_endTab
+		ADD	A,$0A
+		CP	$31
+		JR	NZ,_repeatTab
+		INC	D
+		LD	E,$00
+		JR	endCharScroll
+_endTab:	INC	A
+		LD	E,A
+		JR	endCharPos
 
-charEnter:	LD   E,$00
-		JP   endCharPos
+charEnter:	LD	E,$00
+		JR	endCharPos
 
-charAscii:	CALL screenWrite
-		CALL bufCount
-		LD   (HL),A			; Store character in the buffer
-		CALL curPlus
-		JP   endCharScroll
+charAscii:	CALL	screenWrite
+		CALL	bufCount
+		LD	(HL),A			; Store character in the buffer
+		CALL	curPlus
+		JR	endCharScroll
 
-charUp:		XOR  A
-		OR   D
-		JP   Z,charBell
-		DEC  D
-		JP   endCharPos
+charUp:		XOR 	A
+		OR	D
+		JP	Z,charBell
+		DEC	D
+		JR	endCharPos
 
-charDown:	INC  D
-		JP   endCharScroll
+charDown:	INC	D
+		JR	endCharScroll
 
-charLeft:	LD   A,E
-		OR   D
-		JP   Z,charBell
-		CALL curMin
-		JP   endCharPos
+charLeft:	LD	A,E
+		OR	D
+		JP	Z,charBell
+		CALL	curMin
+		JR	endCharPos
 
-charRight:	CALL curPlus
-		JP   endCharScroll
+charRight:	CALL	curPlus
+		JR	endCharScroll
 
-charDelete:	CALL bufCount
-_repeatDelete:	INC  HL
-		LD   A,(HL)
-		DEC  HL
-		LD   (HL),A
-		CALL screenWrite
-		CALL curPlus
-		INC  HL
-		LD   A,(bbxBUFLEN)
-		CP   L
-		JR   NZ,_repeatDelete
-		JP   endChar
+charDelete:	CALL	bufCount
+_repeatDelete:	INC	HL
+		LD	A,(HL)
+		DEC	HL
+		LD	(HL),A
+		CALL	screenWrite
+		CALL	curPlus
+		INC	HL
+		LD	A,(bbxBUFLEN)
+		CP	L
+		JR 	NZ,_repeatDelete
+		JP	endChar
 
-charInsert:	CALL bufCount
-		LD   A,(bbxBUFLEN)
-		DEC  A
-		LD   C,A
-		LD   B,H
-		LD   A,(BC)
-		CP   $20
-		JP   NZ,charBell
-_repeat1Insert:	DEC  BC
-		LD   A,(BC)
-		INC  BC
-		LD   (BC),A
-		DEC  BC
-		LD   A,L
-		CP   C
-		JR   NZ,_repeat1Insert
-		LD   A,$20
-		LD   (BC),A
-_repeat2Insert:	CALL screenWrite
-		CALL curPlus
-		INC  BC
-		LD   A,(bbxBUFLEN)
-		CP   C
-		JP   Z,endChar
-		LD   A,(BC)
-		JR   _repeat2Insert
+charInsert:	CALL	bufCount
+		LD	A,(bbxBUFLEN)
+		DEC	A
+		LD	C,A
+		LD	B,H
+		LD	A,(BC)
+		CP	$20
+		JP	NZ,charBell
+_repeat1Insert:	DEC	BC
+		LD	A,(BC)
+		INC	BC
+		LD	(BC),A
+		DEC	BC
+		LD	A,L
+		CP	C
+		JR	NZ,_repeat1Insert
+		LD	A,$20
+		LD	(BC),A
+_repeat2Insert:	CALL	screenWrite
+		CALL	curPlus
+		INC	BC
+		LD	A,(bbxBUFLEN)
+		CP	C
+		JP	Z,endChar
+		LD	A,(BC)
+		JR	_repeat2Insert
 
 ; -------------------------------------------------------------------------
 ; Subroutine: set keyboard click sound on or off
@@ -485,6 +497,8 @@ screenWrite:	PUSH	BC
 		PUSH	DE			; cursor position in DE
 		PUSH	HL
 		PUSH	AF
+		PUSH	IX
+		PUSH	IY
 		LD	L,A			; Character to write (ascii)
 		LD	H,$00
 		ADD	HL,HL
@@ -622,6 +636,8 @@ _repeatCharCol:	OUT	(C),A
 ; end ---------------------------------------------------------------------------
 
 _endCharCol:	RST	R_NMIstart
+		POP	IY
+		POP	IX
 		POP	AF
 		POP	HL
 		POP	DE
