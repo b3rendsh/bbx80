@@ -46,6 +46,9 @@
 		PUBLIC	bbx80Init
 		PUBLIC	bbxNMIenable
 		PUBLIC	bbxNMIdisable
+		PUBLIC	bbxShowDsp
+		PUBLIC	bbxHideDsp
+		PUBLIC	bbxSetVdpR1
 
 		EXTERN	START
 		EXTERN	bbxNMIUSR
@@ -54,9 +57,7 @@
 		EXTERN	bbxSECONDS
 
 		EXTERN	INIT_3FBB
-		EXTERN	SETMOD_252B
 		EXTERN	VDPR1_7015
-		EXTERN	CAPSKEY_7016
 
 		EXTERN	bbxDspChar
 		EXTERN	dspCRLF
@@ -173,8 +174,8 @@ bbxNMI:		PUSH	AF
 		INC	HL
 		LD	(bbxSECONDS+2),HL
 _endCount:	LD	A,(bbxNMIFLAG)		; Is there a vdp routine running?
-		CP	$AA
-		JR	Z,_endNMI
+		OR	A
+		JR	NZ,_endNMI
 		IN	A,(IOVDP1)		; Reset interrupt flag (also destroys vdp address register)
 		LD	A,(bbxNMIUSR)
 		CP	$C3			; Test for user interrupt vector
@@ -183,34 +184,67 @@ _endNMI:	POP	HL
 		POP	AF
 		RETN
 
-; High frequency use of following routines will cause video artifacts.
+
+; ------------------------------------------------------------------------------
+; VPD interrupt related routines (replaces bit90 SETMOD)
+; ------------------------------------------------------------------------------
+
+; Disable/enable NMI 
+; Cannot be nested, frequent usage may cause video artifacts.
 bbxNMIenable:	PUSH	AF
+		XOR	A
+		LD	(bbxNMIFLAG),A
 		LD	A,(VDPR1_7015)
 		SET	5,A			; Interrupt Bit
-		JR	_NMIset
+		JR	saveVdpR1
+
 bbxNMIdisable:	PUSH	AF
+		LD	A,1
+		LD	(bbxNMIFLAG),A
 		LD	A,(VDPR1_7015)
 		RES	5,A			; Interrupt Bit
-_NMIset:	LD	(VDPR1_7015),A
-		CALL	SETMOD_252B
+		JR	saveVdpR1
+
+; Show / Hide display
+bbxShowDsp:	PUSH	AF			; Enable display
+		LD	A,(VDPR1_7015)
+		SET	6,A
+		JR	saveVdpR1
+
+bbxHideDsp:	PUSH	AF
+		LD	A,(VDPR1_7015)
+		RES	6,A
+
+saveVdpR1:	LD	(VDPR1_7015),A
+
+bbxSetVdpR1:	IN	A,(IOVDP1)		; reset interrupt on the vdp
+		LD	A,(VDPR1_7015)
+		OUT	(IOVDP1),A
+		LD	A,$81
+		OUT	(IOVDP1),A
 		POP	AF
 		RET
 
 ; Stop/start the NMI routine to prevent VDP RAM addressing issues / screen artifacts.
 ; This works fasters and is more reliable than frequent use of NMI enable/disable.
 ; Alternative is the Colecovision vdp deferred queue, but that takes more code space.
-bbxNMIstop:	PUSH	AF
-		LD	A,$AA
-		LD	(bbxNMIFLAG),A
-		POP	AF
+; Stopping/starting NMI can be used in nested routines, a counter is added to support this.
+bbxNMIstop:	PUSH	HL
+		LD	HL,bbxNMIFLAG
+		INC	(HL)
+		POP	HL
 		RET
 
 bbxNMIstart:	PUSH	AF
-		XOR	A
+		LD	A,(bbxNMIFLAG)
+		DEC	A
 		LD	(bbxNMIFLAG),A
-		IN	A,(IOVDP1)		; reset interrupt on the vdp
-		POP	AF
+		JR	NZ, _endResetIrq
+		IN	A,(IOVDP1)
+_endResetIrq:	POP	AF
 		RET
+
+
 		
 ; -----------------------------------------------------------------------------
 ; Initialize bit90 host
@@ -257,10 +291,8 @@ ENDIF
 _mem_03:	PUSH	DE			; PAGE (see LOMEM)
 		PUSH	HL			; HIMEM
 
-		; BIT90 init command mode: screen / sound
+		; BIT90 init command mode: screen / sound / capsoff
 		CALL	INIT_3FBB
-		XOR	A
-		LD	(CAPSKEY_7016),A	; Set caps lower off (ie. caps is on after boot)
 
 		RST	R_dspTell
 		DB	BELL

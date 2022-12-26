@@ -18,9 +18,6 @@
  
 		SECTION BIT90HOST
 
-		PUBLIC	SETMOD_252B
-		PUBLIC	SHOWDSP_3FD4
-		PUBLIC	HIDEDSP_3FDD
 		PUBLIC	BSAVE_1A90
 		PUBLIC	BLOAD_1C4B
 		PUBLIC	GETKEY_3330
@@ -31,41 +28,11 @@
 		EXTERN	dspCursor
 		EXTERN	bbxNMIenable
 		EXTERN	bbxNMIdisable
+		EXTERN	bbxShowDsp
+		EXTERN	bbxHideDsp
+		EXTERN	bbxSetVdpR1
 		EXTERN	bbxFLSCUR
-
-; ------------------------------------------------------------------------------
-; Set VDP register 0 and 1
-; (bit90: $252B)
-; ------------------------------------------------------------------------------
-SETMOD_252B:	IN	A,(IOVDP1)
-		LD	A,(VDPR0_7014)
-		OUT	(IOVDP1),A
-		LD	A,$80
-		OUT	(IOVDP1),A
-		LD	A,(VDPR1_7015)
-		OUT	(IOVDP1),A
-		LD	A,$81
-		OUT	(IOVDP1),A
-		RET
-
-; ------------------------------------------------------------------------------
-; Show / Hide display
-; (bit90: $3FDD)
-; ------------------------------------------------------------------------------
-
-SHOWDSP_3FD4:	IN	A,(IOVDP1)		; Enable display
-		LD	A,(VDPR1_7015)		; Copy of VDP Register 1
-		OR	$40			; %01000000
-		JR	_setVDPR1
-HIDEDSP_3FDD:	IN	A,(IOVDP1)		; Disable display
-		LD	A,(VDPR1_7015)
-		AND	$BF			; %10111111
-_setVDPR1:	LD	(VDPR1_7015),A
-		OUT	(IOVDP1),A
-		LD	A,$81
-		OUT	(IOVDP1),A
-		BIT	1,C
-		RET
+		EXTERN	bbxCAPSOFF
 
 ; -----------------------------------------------------------------------------
 ; BSAVE - Save an area of memory to a file on tape.
@@ -93,8 +60,7 @@ LAB_1AF4:	LD	A,L			; Calculate number of 256 byte blocks
 		INC	A
 LAB_1AFA:	LD	(LAB_709E),A		; 256-byte Block counter
 		CALL	FUN_1C2E		; Wait until user start the tape unit
-		JP	NZ,LAB_1B2C		; Not ready, terminate
-		CALL	bbxNMIdisable		; Tape I/O requires exact timing
+		JR	NZ,LAB_1B2C		; Not ready, terminate
 		LD	A,$42			; Header ID
 		LD	(LAB_71CB),A
 		XOR	A
@@ -102,10 +68,11 @@ LAB_1AFA:	LD	(LAB_709E),A		; 256-byte Block counter
 		RST	R_dspTell
 		DB	CR,LF,BELL,"*TAPE DUMP:"
 		DB	0
+		RST	R_NMIstop		; Tape I/O requires exact timing
 		CALL	FUN_1D84		; display filename and calculate checksum
 		CALL	FUN_1B6C		; Write file header to tape
 		CALL	FUN_1BE4		; Write file data to tape
-		CALL	bbxNMIenable
+		RST	R_NMIstart
 LAB_1B26:	RST	R_dspTell
 		DB	CR,LF,"* END *",BELL
 		DB	0
@@ -125,7 +92,7 @@ _copyFilename:	LD	A,(HL)
 _endFilename:	LD	A,$0F
 		SUB	B
 		LD	(LAB_70A8),A		; Length of filename for save
-		LD	(LAB_71B0),A		; Length of filenmame for load
+		LD	(LAB_71B0),A		; Length of filename for load
 		RET
 
 ; Write file header to tape
@@ -315,18 +282,17 @@ BLOAD_1C4B:	LD	(LAB_71C9),BC		; Store max file size (bytes)
 		CALL	FUN_1B31		; Copy filename to BIT90 variable
 		LD	A,'M'			; File is of type 'M'achine (binary)
 		LD	(LAB_71A9),A
-		PUSH	HL
 LAB_1C68:	LD	A,$42			; Block: header id
 		LD	(LAB_71CB),A
 		CALL	FUN_1C2E		; Wait until user starts the tape unit
 		JP	NZ,LAB_1B2C		; Not ready, terminate
-		CALL	bbxNMIdisable		; Tape I/O requires exact timing
 		RST	R_dspTell
-		DB	CR,LF,BELL,"*TAPE LOAD:"
+		DB	CR,LF,"*TAPE LOAD:",BELL
 		DB	0
+		RST	R_NMIstop		; Tape I/O requires exact timing
 		CALL	FUN_1C8D		; Load and check header
 		CALL	FUN_1CF6		; Load data
-		CALL	bbxNMIenable
+		RST	R_NMIstart
 		JP	LAB_1B26		; Print 'end' and done
 
 
@@ -341,8 +307,8 @@ WRONG_FILE:	LD	A,'x'
 
 
 FUN_1C8D:	RST	R_dspCRLF
-		LD	D,$00
-LAB_1C95:	CALL	FUN_1D78		; Read block from tape
+LAB_1C95:	LD	D,$00			; * Include this in the loop
+		CALL	FUN_1D78		; Read block from tape
 		LD	A,(LAB_7098)
 		LD	HL,LAB_71CB
 		CP	(HL)			; Is it a file header block?
@@ -353,23 +319,21 @@ LAB_1C95:	CALL	FUN_1D78		; Read block from tape
 		CALL	FUN_1D9C		; Verify checksum block data
 		JR	NZ,LAB_1C95
 		CALL	FUN_1D84		; Display filename and verify checksum
-		LD	A,(LAB_71B0)		; Load filename length
+		LD	HL,LAB_71B0		; filename length + filename parameter
+		LD	DE,LAB_70A8		; filename length + filename in tape header
+		LD	A,(HL)
 		AND	A			; Is a filename specified?
+		JR	Z,LAB_1CCD		; If not specified, skip check
 
 		; Start verify filename
-		JR	Z,LAB_1CCD		; If not specified, skip check
-		LD	B,A
-		LD	HL,LAB_71B1
-		LD	A,(LAB_70A8)
-		CP	B
-		JR	NZ,WRONG_FILE		; Not the same length
-		LD	DE,LAB_70A9
-LAB_1CC5:	LD	A,(DE)
+		LD	B,A			; 
+		INC	B			; include filename length check in loop
+_nameCompare:	LD	A,(DE)
 		CP	(HL)
-		JR	NZ,WRONG_FILE		; Not the same name
+		JR	NZ,WRONG_FILE
 		INC	HL
 		INC	DE
-		DJNZ	LAB_1CC5
+		DJNZ	_nameCompare
 		; End verify filename
 
 LAB_1CCD:	LD	A,(LAB_709F)
@@ -472,9 +436,10 @@ FUN_1D9C:	CALL	FUN_1BC2		; Calculate checksum
 		SBC	HL,DE			; Do the checksums match?
 		RET
 
-; Read data from tape (same code as BIT90 BASIC)
+; Read data from tape (almost same code as BIT90 BASIC)
 FUN_1E2A:	PUSH	HL
 		PUSH	BC
+		LD	H,$70			; * Set H value (HL is not $7098 anymore)
 LAB_1E2C:	LD	B,$18
 LAB_1E2E:	CALL	FUN_1EF0
 		LD	L,A
@@ -485,7 +450,7 @@ LAB_1E2E:	CALL	FUN_1EF0
 		JR	C,LAB_1E2C
 		CP	$80
 		JR	NC,LAB_1E2C
-		SUB	H
+		SUB	H			; * Value above used here
 		JR	NC,LAB_1E44
 		NEG
 LAB_1E44:	CP	$06
@@ -581,7 +546,7 @@ LAB_1EE3:	CALL	FUN_1EF0
 		POP	HL
 		RET
 
-FUN_1EF0:	IN	A,(IOTAP1)		; Read tape port
+FUN_1EF0:	IN	A,(IOTAP1)		; Read tape port (bit 7 is tape in)
 		XOR	D
 		JP	M,FUN_1EF0
 		LD	E,$00
@@ -594,7 +559,7 @@ LAB_1EF8:	INC	E
 		RET
 		
 ; Error handling in BBC BASIC wrapper module
-LAB_1B8C:	CALL	bbxNMIenable
+LAB_1B8C:	RST	R_NMIstart
 		JP	TAPE_ERR
 
 
@@ -662,7 +627,7 @@ GETKEY_3330:	PUSH	BC
 		CP	$25
 		JR	NZ,LAB_336F
 		XOR	A
-		LD	(CAPSKEY_7016),A
+		LD	(bbxCAPSOFF),A
 		JR	LAB_337F
 
 LAB_336F:	CALL	LAB_3396
@@ -672,14 +637,14 @@ LAB_336F:	CALL	LAB_3396
 LAB_3376:	CP	$25
 		JR	NZ,LAB_3382
 		LD	A,$20
-		LD	(CAPSKEY_7016),A
+		LD	(bbxCAPSOFF),A
 
 LAB_337F:	AND	A
 		JR	LAB_33D6
 
 LAB_3382:	CALL	LAB_3396
 		JR	NC,LAB_33D5
-		LD	HL,CAPSKEY_7016
+		LD	HL,bbxCAPSOFF
 		OR	(HL)
 IFDEF BIT90
 		LD	HL,LAB_7017		; Graphics key characters not implemented
@@ -882,7 +847,7 @@ ENDIF
 BYE_3FB1:	CALL	bbxNMIdisable
 		XOR	A			; Command "BYE" / exit BASIC
 		LD	($8000),A		; $8000 = Game rom identifier ($AA $55)
-		IN	A,(IOROM0)			; Switch Mem bank to Coleco ROM
+		IN	A,(IOROM0)		; Switch Mem bank to Coleco ROM
 		RST	$00			; Reboot
 
 ; ------------------------------------------------------------------------------
@@ -906,9 +871,9 @@ INIT_3FBB:	PUSH	HL
 ; Mandatory vectors
 ; ------------------------------------------------------------------------------
 
-LAB_3FEE:	JP	SHOWDSP_3FD4
-LAB_3FF1:	JP	HIDEDSP_3FDD
-LAB_3FF4:	JP	SETMOD_252B
+LAB_3FEE:	JP	bbxShowDsp
+LAB_3FF1:	JP	bbxHideDsp
+LAB_3FF4:	JP	bbxSetVdpR1
 LAB_3FF7:	JP	KEYSCAN_3405
 LAB_3FFA:	JP	INIT_3FBB
 LAB_3FFD:	JP	BAS_3FB8		; Address called from Game ROM
@@ -922,13 +887,11 @@ LAB_3FFD:	JP	BAS_3FB8		; Address called from Game ROM
 
 		PUBLIC	VDPR0_7014
 		PUBLIC	VDPR1_7015
-		PUBLIC	CAPSKEY_7016
 		PUBLIC	TAPE_VAR
 
 		
-VDPR0_7014:	DB	0		; Copy of VDP register 0 value
+VDPR0_7014:	DB	0		; Copy of VDP register 0 value (not used)
 VDPR1_7015:	DB	0		; Copy of VDP register 1 value
-CAPSKEY_7016:	DB	0		; Used by GETKEY
 
 ; BSAVE / BLOAD (bit90: $7098, the variables must be in consecutive addresses)
 ; The space can be re-used for variables in functions that don't use console or tape routines
@@ -943,20 +906,23 @@ LAB_709E:	DB	0		; Tape: last block number
 LAB_709F:	DB	0		; Tape: file type (M or B)
 LAB_70A0:	DB	0,0		; Tape: address origin (for M type)
 		DS	6,0		; Tape: ? same values in every block
+
 LAB_70A8:	DB	0		; Tape: data record 256 bytes		(Header: length of filename)
 LAB_70A9:	DS	$FF,0		; Tape: data				(Header: filename)
-LAB_71A8:	DB	0
-LAB_71A9:	DB	0
-LAB_71AA:	DB	0,0
-LAB_71AC:	DB	0,0,0,0
-LAB_71B0:	DB	0
-LAB_71B1:	DS	$0B,0
-LAB_71BC:	DB	0,0
-LAB_71BE:	DB	0,0,0
-LAB_71C1:	DB	0
-LAB_71C2:	DB	0,0
-LAB_71C4:	DB	0
-LAB_71C5:	DB	0,0
+
+		DB	0		; Filler
+LAB_71A9:	DB	0		; M or B file type
+LAB_71AA:	DB	0,0		; Start address
+LAB_71AC:	DB	0,0		; File size
+		DB	0,0		; Filler
+LAB_71B0:	DB	0		; Filename length
+LAB_71B1:	DS	$10,0		; Filename (save) or 16xFF (load)
+LAB_71C1:	DB	0		; Block Id (Header $42, Data $44)
+LAB_71C2:	DB	0		; Block number (1 Byte)
+		DB	0		; Filler
+LAB_71C4:	DB	0		; Last Block number
+LAB_71C5:	DB	0		; Flag to end load data
+		DB	0		; Filler
 LAB_71C7:	DB	0,0		; Start address of data to save/load
 LAB_71C9:	DB	0,0		; File length (in bytes)
-LAB_71CB:	DB	0
+LAB_71CB:	DB	0		; Header Id ($42)

@@ -31,8 +31,8 @@
 		PUBLIC	dspTell
 
 		EXTERN	GETKEY_3330
-		EXTERN	SHOWDSP_3FD4
-		EXTERN	HIDEDSP_3FDD
+		EXTERN	bbxShowDsp
+		EXTERN	bbxHideDsp
 
 		EXTERN	bbxNMIenable
 		EXTERN	bbxNMIdisable
@@ -125,7 +125,7 @@ initConsole:	PUSH	HL
 		LDIR				; Copy initial variable values to RAM
 
 		; Init screen
-		CALL	HIDEDSP_3FDD
+		CALL	bbxHideDsp
 		LD	BC,$0300		; Set counter
 		LD	HL,$1800		; Start address nametable
 _writeNT:	LD	A,L
@@ -133,7 +133,7 @@ _writeNT:	LD	A,L
 		CPI				; Write Nametable with 3x 0..FF
 		JP	PE,_writeNT
 		CALL	bbxCls
-		CALL	SHOWDSP_3FD4
+		CALL	bbxShowDsp
 
 		POP	HL
 		RET
@@ -337,6 +337,8 @@ charControl:	CP	$07
 		JP	Z,charDown
 		CP	$0D
 		JR	Z,charEnter
+		CP	$20
+		JR	C,endChar
 		CP	$80
 		JR	NC,endChar
 		CALL	screenWrite
@@ -384,7 +386,7 @@ endChar:	POP	AF
 
 charBS:		LD	A,D
 		OR	E
-		JP	Z,charBell
+		JR	Z,endChar
 		CALL	curMin
 		CALL	bufCount
 		LD	A,L
@@ -419,7 +421,7 @@ charAscii:	CALL	screenWrite
 
 charUp:		XOR 	A
 		OR	D
-		JP	Z,charBell
+		JR	Z,endChar
 		DEC	D
 		JR	endCharPos
 
@@ -428,7 +430,7 @@ charDown:	INC	D
 
 charLeft:	LD	A,E
 		OR	D
-		JP	Z,charBell
+		JR	Z,endChar
 		CALL	curMin
 		JR	endCharPos
 
@@ -873,6 +875,7 @@ V80_START:	DB	$C9,$00,$00	; bbxNMIUSR
 		DB	$F0		; bbxTXTCOLOR
 		DB	0		; bbxINVCHAR
 		DB	1		; bbxKEYS
+		DB	0		; bbxCAPSOFF
 		DB	0		; bbxCOMSPEED
 		DB	78		; bbxCOMMODE
 		DB	28		; bbxCOMTIMEOUT
@@ -1017,6 +1020,7 @@ bbxCHARDEF128:	DB	$00,$00,$00,$00	; 32 <space>
 		PUBLIC	bbxTXTCOLOR
 		PUBLIC	bbxINVCHAR
 		PUBLIC	bbxKEYS
+		PUBLIC	bbxCAPSOFF
 		PUBLIC	bbxCOMSPEED
 		PUBLIC	bbxCOMMODE
 		PUBLIC	bbxCOMTIMEOUT
@@ -1035,6 +1039,8 @@ bbxMAXLIN:	DB	$18		; Maximum linenumber + 1
 bbxTXTCOLOR:	DB	$F0		; Text color ($F0 is white on transparant)
 bbxINVCHAR:	DB	0		; Inverse character (inverse color)
 bbxKEYS:	DB	1		; Keyboard click sound on or off
+bbxCAPSOFF:	DB	0		; The BIT90 has no capslock but a caps lower button, 0 means caps on
+
 
 ; Variables for RS232 i/o
 bbxCOMSPEED:	DB	0		; Baudrate selection (2400 Baud)

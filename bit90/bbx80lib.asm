@@ -106,9 +106,11 @@ _background:	LD	L,A
 		BIT	6,H
 		RET	Z
 _backdrop:	LD	A,L
+		RST	R_NMIstop
 		OUT	(IOVDP1),A
 		LD	A,$87
 		OUT	(IOVDP1),A
+		RST	R_NMIstart
 		RET
 
 ; -----------------------------------------------------------------------------
@@ -121,7 +123,9 @@ bbxGetPixel:	PUSH	HL
 		PUSH	BC
 		CALL	vdpXYtoHLB		; calculate VDP address for X,Y position
 		JR	C,_endGetPixel		; wrong X,Y value?
+		RST	R_NMIstop		
 		CALL	vdpReadByte
+		RST	R_NMIstart
 		AND	B			; Z = 0 if pixel not set
 _endGetPixel:	POP	BC
 		POP	HL
