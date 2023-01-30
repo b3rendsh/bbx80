@@ -3,6 +3,7 @@ rem Make z80 binary from asm source with z88dk tools
 rem When switching targets do a make clean first!
 
 set bbc=..\bbc-z80\
+set common=..\common\
 
 if "%1"=="rom" goto rom
 if "%1"=="cart" goto cart
@@ -31,7 +32,7 @@ goto assemble
 
 :assemble
 del /q %obj%
-z80asm -b -d -l -m -D%target% -O%obj% -o=bbx80.bin bbx80.asm bbx80con.asm basic.asm bit90.asm bbx80lib.asm %bbc%main.asm %bbc%exec.asm %bbc%eval.asm %bbc%fpp.asm %bbc%ram.asm  
+z80asm -b -d -l -m -D%target% -O%obj% -o=bbx80.bin bbx80.asm bbx80con.asm bit90.asm bbx80lib.asm %common%basic.asm %bbc%main.asm %bbc%exec.asm %bbc%eval.asm %bbc%fpp.asm %bbc%ram.asm  
 z88dk-appmake +glue -b %obj%bbx80 --filler 0x00 --clean --exclude-sections %exsection%
 z88dk-appmake +rom -b %obj%bbx80__.bin -o %rom%bbx80.rom --chipsize 8192 -s 16384 --org 0
 echo done
@@ -41,7 +42,7 @@ goto end
 :test
 echo Compiling test..
 set obj=.\objtest\
-z80asm -b -d -l -m -DTEST -O%obj% -o=bbx80.bin bbx80.asm bbx80con.asm basic.asm bit90.asm bbx80lib.asm %bbc%main.asm %bbc%exec.asm %bbc%eval.asm %bbc%fpp.asm %bbc%ram.asm 
+z80asm -b -d -l -m -DTEST -O%obj% -o=bbx80.bin bbx80.asm bbx80con.asm bit90.asm bbx80lib.asm %common%basic.asm %bbc%main.asm %bbc%exec.asm %bbc%eval.asm %bbc%fpp.asm %bbc%ram.asm 
 z88dk-appmake +glue -b %obj%bbx80 --filler 0x00 --clean --exclude-sections "BOOT BASIC BASICRAM BBX80VAR BBX80RAM"
 goto end
 
@@ -50,6 +51,7 @@ del /q objrom
 del /q objcart
 del /q objtest
 del /q bbc-z80
+del /q common
 echo Cleanup done
 
 :end

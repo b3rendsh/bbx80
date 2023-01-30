@@ -1,5 +1,5 @@
 ; ------------------------------------------------------------------------------
-; BBX80 v1.0
+; BBX80 v1.1
 ; 
 ; This module contains the memory map and bootcode for the BIT90 host computer.
 ; ------------------------------------------------------------------------------
@@ -49,19 +49,62 @@
 		PUBLIC	bbxShowDsp
 		PUBLIC	bbxHideDsp
 		PUBLIC	bbxSetVdpR1
+		PUBLIC	bbxSetTime
+		PUBLIC	bbxGetTime
+		PUBLIC	bbxCOMDS
+		
+		; dos not implemented
+		PUBLIC	bbxDosOpen
+		PUBLIC	bbxDosShut
+		PUBLIC	bbxDosBget
+		PUBLIC	bbxDosBput
+		PUBLIC	bbxDosStat
+		PUBLIC	bbxDosGetext
+		PUBLIC	bbxDosGetPtr
+		PUBLIC	bbxDosPutPtr
+		PUBLIC	bbxDosReset
+		PUBLIC	bbxDosCall
+		PUBLIC	bbxDosDot
+		PUBLIC	bbxDosDir
+		PUBLIC	bbxDosExecIn
 
+		; commands not implemented
+		PUBLIC	bbxPsgEnvelope
+		PUBLIC	bbxDspMode
+		PUBLIC	bbxPsgSound
+		PUBLIC	bbxAdval
+		PUBLIC	bbxGetDateTime
+		PUBLIC	bbxSetDateTime
+
+		; basic
+		EXTERN	CSAVE
+		EXTERN	CLOAD
 		EXTERN	START
+		EXTERN	PBCDL
+		EXTERN	EXTERR
+		EXTERN	SORRY
 		EXTERN	bbxNMIUSR
 		EXTERN	bbxNMICOUNT
 		EXTERN	bbxNMIFLAG
 		EXTERN	bbxSECONDS
 
-		EXTERN	INIT_3FBB
+		; bit90
+		EXTERN	bbxHostInit
+		EXTERN	bbxHostExit
 		EXTERN	VDPR1_7015
 
+		; bbx80con
+		EXTERN	initConsole
 		EXTERN	bbxDspChar
+		EXTERN	bbxKeysOn
+		EXTERN	bbxKeysOff
 		EXTERN	dspCRLF
 		EXTERN	dspTell
+
+		; bbx80lib
+		EXTERN	bbxComLoad
+		EXTERN	bbxComSave
+		EXTERN	dspStringA
 
 ; ------------------------------------------------------------------------------
 ; Bootcode for BBX80 ROM 16k edition.
@@ -82,12 +125,11 @@ RST_20:		JP	bbxNMIstop
 		DEFS	5,$00
 RST_28:		JP	bbxNMIstart
 		DEFS	5,$00
-RST_30:		RET
+RST_30:		RET			; Not used
 		DEFS	2,$00
 		DEFS	5,$00
-RST_38:		RET			; JP INTVEC
+RST_38:		RET			; Not used (INTVEC)
 		DEFS	2,$00
-
 ENDIF
 
 ; ------------------------------------------------------------------------------
@@ -116,26 +158,37 @@ GAME_NAME:	DB	"BBBX80 ",$1D," 2022 H.J.BERENDS/"
 
 ENDIF
 
-; ---------------------------------------------------------------------------
-; dspNumHL - routine to display a value in HL in ascii characters
-; ---------------------------------------------------------------------------
-dspNumHL:	LD	BC,-10000
-		CALL	num1
-		LD	BC,-1000
-		CALL	num1
-		LD	BC,-100
-		CALL	num1
-		LD	BC,-10
-		CALL	num1
-		LD	C,-01
-num1:		LD	A,'0'-1
-num2:		INC	A
-		ADD	HL,BC
-		JR	C,num2
-		SBC	HL,BC
-		RST	R_dspChar
-		INC	DE
+; ------------------------------------------------------------------------------
+; Stop/start the NMI routine to prevent VDP RAM addressing issues / screen artifacts.
+; This works fasters and is more reliable than frequent use of NMI enable/disable.
+; Alternative is the Colecovision vdp deferred queue, but that takes more code space.
+; Stopping/starting NMI can be used in nested routines, a counter is added to support this.
+; ------------------------------------------------------------------------------
+bbxNMIstop:	PUSH	HL
+		LD	HL,bbxNMIFLAG
+		INC	(HL)
+		POP	HL
 		RET
+
+bbxNMIstart:	PUSH	AF
+		LD	A,(bbxNMIFLAG)
+		DEC	A
+		LD	(bbxNMIFLAG),A
+		JR	NZ, _endResetIrq
+		IN	A,(IOVDP1)
+_endResetIrq:	POP	AF
+		RET
+
+; ------------------------------------------------------------------------------
+; PUTIME - Set elapsed-time clock.
+; Inputs: DEHL = time to load (seconds)
+;
+; In the BBX80 NMI only seconds are counted, not centiseconds.
+; ------------------------------------------------------------------------------
+bbxSetTime:	CALL	bbxNMIdisable
+		LD	(bbxSECONDS),HL
+        	LD	(bbxSECONDS+2),DE
+		JP	bbxNMIenable
 
 ; -----------------------------------------------------------------------------
 ; NMI - must start at address $066 when in ROM
@@ -184,7 +237,6 @@ _endNMI:	POP	HL
 		POP	AF
 		RETN
 
-
 ; ------------------------------------------------------------------------------
 ; VPD interrupt related routines (replaces bit90 SETMOD)
 ; ------------------------------------------------------------------------------
@@ -225,27 +277,17 @@ bbxSetVdpR1:	IN	A,(IOVDP1)		; reset interrupt on the vdp
 		POP	AF
 		RET
 
-; Stop/start the NMI routine to prevent VDP RAM addressing issues / screen artifacts.
-; This works fasters and is more reliable than frequent use of NMI enable/disable.
-; Alternative is the Colecovision vdp deferred queue, but that takes more code space.
-; Stopping/starting NMI can be used in nested routines, a counter is added to support this.
-bbxNMIstop:	PUSH	HL
-		LD	HL,bbxNMIFLAG
-		INC	(HL)
-		POP	HL
-		RET
+; ------------------------------------------------------------------------------
+; GETIME - Read elapsed-time clock.
+; Outputs: DEHL = elapsed time (seconds)
+;
+; In the BBX80 NMI only seconds are counted, not centiseconds.
+; ------------------------------------------------------------------------------
+bbxGetTime:	CALL	bbxNMIdisable
+		LD	HL,(bbxSECONDS)
+		LD	DE,(bbxSECONDS+2)
+		JR	bbxNMIenable
 
-bbxNMIstart:	PUSH	AF
-		LD	A,(bbxNMIFLAG)
-		DEC	A
-		LD	(bbxNMIFLAG),A
-		JR	NZ, _endResetIrq
-		IN	A,(IOVDP1)
-_endResetIrq:	POP	AF
-		RET
-
-
-		
 ; -----------------------------------------------------------------------------
 ; Initialize bit90 host
 ; Initialize console
@@ -292,7 +334,8 @@ _mem_03:	PUSH	DE			; PAGE (see LOMEM)
 		PUSH	HL			; HIMEM
 
 		; BIT90 init command mode: screen / sound / capsoff
-		CALL	INIT_3FBB
+		CALL	bbxHostInit
+		CALL	initConsole		
 
 		RST	R_dspTell
 		DB	BELL
@@ -322,7 +365,7 @@ ENDIF
 		DEC	HL			; BASIC will take 3 bytes
 		DEC	HL
 		DEC	HL
-		CALL	dspNumHL
+		CALL	PBCDL
 		RST	R_dspTell
 		DB	" BYTES FREE",CR,LF
 		DB	CR,LF
@@ -333,7 +376,61 @@ ENDIF
 		; Get saved himem and page, while switching hl and de
 		POP	HL			; PAGE 
 		POP	DE			; HIMEM
+		XOR	A			; Set Z-flag (no autorun)
 		RET
+
+
+; -----------------------------------------------------------------------------
+; Exit bbx80 environment
+; -----------------------------------------------------------------------------
+bbx80Exit:	EQU	bbxHostExit
+
+; ------------------------------------------------------------------------------
+; Not implemented
+; ------------------------------------------------------------------------------
+bbxDosOpen:
+bbxDosShut:
+bbxDosBget:
+bbxDosBput:
+bbxDosStat:
+bbxDosGetext:
+bbxDosGetPtr:
+bbxDosPutPtr:
+bbxDosReset:
+bbxDosCall:	
+bbxDosDot:
+bbxDosDir:
+bbxDosExecIn:	RET
+
+bbxPsgEnvelope:	EQU	SORRY
+bbxDspMode:	EQU	SORRY
+bbxPsgSound:	EQU	SORRY
+bbxAdval:	EQU	SORRY
+bbxGetDateTime:	EQU	SORRY
+bbxSetDateTime:	EQU	SORRY
+
+; --------------------------------------------------------
+; OS Commands / jump table
+; --------------------------------------------------------
+bbxCOMDS:	DEFM	"BY"
+		DEFB	'E'+80H
+		DEFW	bbx80Exit
+		DEFM	"CLOA"
+		DEFB	'D'+80H
+		DEFW	CLOAD
+		DEFM	"CSAV"
+		DEFB	'E'+80H
+		DEFW	CSAVE
+		DEFM	"KEYSOF"
+		DEFB	'F'+80H
+		DEFW	bbxKeysOff
+		DEFM	"KEYSO"
+		DEFB	'N'+80H
+		DEFW	bbxKeysOn
+		DEFB	0FFH
+
+
+
 
 ; -----------------------------------
 ; *** Remaining free internal RAM ***

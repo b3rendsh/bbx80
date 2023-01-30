@@ -1,6 +1,6 @@
 ; ------------------------------------------------------------------------------
-; BBX80 Library v1.0
-; Copyright (C) 2022 H.J. Berends
+; BBX80 Library v1.1
+; Copyright (C) 2023 H.J. Berends
 ;
 ; You can freely use, distribute or modify this program.
 ; It is provided freely and "as it is" in the hope that it will be useful, 
@@ -11,7 +11,7 @@
 
 		SECTION BBX80LIB
 
-; Export
+		PUBLIC	bbxClg
 		PUBLIC	bbxDrawLine
 		PUBLIC	bbxSetColor
 		PUBLIC	bbxGetPixel
@@ -25,10 +25,19 @@
 		PUBLIC	vdpXYtoHLB
 		PUBLIC	vdpWriteBlock
 		
-; Include
+		; bbx80 
 		EXTERN	bbxCOMSPEED
 		EXTERN	bbxCOMMODE
 		EXTERN	bbxCOMTIMEOUT
+
+		; basic
+		EXTERN	CLS
+
+; ------------------------------------------------------------------------------
+; Subroutine: Clear graphics screen
+; Since text and graphics are on the same screen, CLG is the same as CLS
+; ------------------------------------------------------------------------------
+bbxClg:		EQU	CLS		; Must be CLS not bbxCls
 
 ; ------------------------------------------------------------------------------
 ; Subroutine: Draw a line
@@ -68,7 +77,6 @@ bbxDrawLine:	CALL	bbxPlotPixel
 
 exitDraw:	POP	HL
 		RET
-
 
 ; ------------------------------------------------------------------------------
 ; Subroutine: Sets the foreground, background and backdrop color.

@@ -1,6 +1,6 @@
 ; ------------------------------------------------------------------------------
-; BBX80 BIT90 HOST v1.0
-; Copyright (C) 2022 H.J. Berends*
+; BBX80 BIT90 HOST v1.1
+; Copyright (C) 2023 H.J. Berends*
 ;
 ; You can freely use, distribute or modify this program.
 ; It is provided freely and "as it is" in the hope that it will be useful, 
@@ -12,27 +12,74 @@
 
 		INCLUDE	"BBX80.INC"
 
-; ---------------------------
-; *** BIT90 host routines ***
-; ---------------------------
- 
 		SECTION BIT90HOST
 
-		PUBLIC	BSAVE_1A90
-		PUBLIC	BLOAD_1C4B
-		PUBLIC	GETKEY_3330
+		PUBLIC	bbxHostInit
+		PUBLIC	bbxHostExit
+		PUBLIC	bbxHostSave
+		PUBLIC	bbxHostLoad
+		PUBLIC	bbxGetKey
 
-		EXTERN	TAPE_ERR
-
-		EXTERN	dspStringA
-		EXTERN	dspCursor
+		; bbx80
 		EXTERN	bbxNMIenable
 		EXTERN	bbxNMIdisable
 		EXTERN	bbxShowDsp
 		EXTERN	bbxHideDsp
 		EXTERN	bbxSetVdpR1
+		EXTERN	dspCursor
+		EXTERN	dspStringA
 		EXTERN	bbxFLSCUR
 		EXTERN	bbxCAPSOFF
+
+		; basic
+		EXTERN	EXTERR
+
+
+; --------------------------------------------------------
+; OSSAVE - Save an area of memory to a file.
+; Inputs: HL = addresses filename (term CR)
+;         DE = start address of data to save
+;         BC = length of data to save (bytes)
+; --------------------------------------------------------
+bbxHostSave:	EXX
+		PUSH	BC
+		PUSH	DE
+		PUSH	HL
+		EXX
+		CALL	BSAVE_1A90
+		JR	POP_EXX 
+
+; --------------------------------------------------------
+; OSLOAD - Load an area of memory from a file.
+;  Inputs: HL addresses filename (term CR)
+;           DE = address at which to load
+;           BC = maximum allowed size (bytes)
+; Outputs: Carry reset indicates no room for file.
+; --------------------------------------------------------
+bbxHostLoad:	EXX
+		PUSH	BC
+		PUSH	DE
+		PUSH	HL
+		EXX
+		CALL	BLOAD_1C4B
+		SCF			; the part of the file up to max size is loaded.
+
+POP_EXX:	EXX
+		POP	HL
+		POP	DE
+		POP	BC
+		EXX
+		RET
+
+TAPE_ERR:	RST	R_NMIstart
+		LD	A,202		; "Device fault"
+		CALL	EXTERR
+		DEFM	"Tape error"
+		DB	0
+
+; ---------------------------
+; *** BIT90 host routines ***
+; ---------------------------
 
 ; -----------------------------------------------------------------------------
 ; BSAVE - Save an area of memory to a file on tape.
@@ -160,15 +207,16 @@ LAB_1C1E:	POP	BC
 		DJNZ	LAB_1BEB
 		DEC	H
 		LD	(LAB_71AC),HL
-		JP	FUN_1BE4
+		JR	FUN_1BE4
 
 ; Get Ready, called by BSAVE and BLOAD
 FUN_1C2E:	RST	R_dspTell
 		DB	CR,LF,"READY?",BELL
 		DB	0
 _getReady:	CALL	dspCursor
-		CALL	GETKEY_3330
-		JR	NC,_getReady
+		CALL	bbxGetKey
+		OR	A
+		JR	Z,_getReady
 		LD	HL,bbxFLSCUR
 		RES	6,(HL)
 		CALL	dspCursor
@@ -558,16 +606,16 @@ LAB_1EF8:	INC	E
 		CP	C
 		RET
 		
-; Error handling in BBC BASIC wrapper module
-LAB_1B8C:	RST	R_NMIstart
-		JP	TAPE_ERR
+; Tape Error
+LAB_1B8C:	EQU	TAPE_ERR
+
 
 
 ; ------------------------------------------------------------------------------
 ; BIT90 Specific part of the console initialization
 ; (bit90: $32AF with modifications)
 ; ------------------------------------------------------------------------------
-INIT_32AF:	; Sound off
+bbxHostInit:	; Sound off
 		LD	A,$9F
 		OUT	(IOPSG0),A
 		LD	A,$BF
@@ -579,8 +627,6 @@ INIT_32AF:	; Sound off
 
 		; VDP initialization
 		IN	A,(IOVDP1)		; Read VDP register 0
-		LD	A,(VDPINITR0)
-		LD	(VDPR0_7014),A
 		LD	A,(VDPINITR1)
 		LD	(VDPR1_7015),A
 		LD	B,$10
@@ -590,10 +636,11 @@ INIT_32AF:	; Sound off
 		RET
 
 ; --------------------------------------------------------
-; GETKEY routine 
+; GETKEY routine
+; Returns A=Key or 0
 ; (bit90: $3330 with modifications)
 ; --------------------------------------------------------
-GETKEY_3330:	PUSH	BC
+bbxGetKey:	PUSH	BC
 		PUSH	DE
 		PUSH	HL
 		LD	HL,bbxFLSCUR
@@ -639,7 +686,11 @@ LAB_3376:	CP	$25
 		LD	A,$20
 		LD	(bbxCAPSOFF),A
 
-LAB_337F:	AND	A
+IFDEF BIT90
+LAB_337F:	AND	A			; Clear carry flag (inkey is $FF)
+ELSE
+LAB_337F:	XOR	A			; Return 0 to indicate no inkey
+ENDIF
 		JR	LAB_33D6
 
 LAB_3382:	CALL	LAB_3396
@@ -829,22 +880,17 @@ SCANCODES:	DB	$2D,$37,$33,$5C,$F5,$31,$35,$39
 		SECTION	BIT90VEC 
 
 IFDEF BBX80ROM
-		ORG	$3FD8
+		ORG	$3FF3
 ENDIF
 
 
-		PUBLIC	BYE_3FB1
-		PUBLIC	BAS_3FB8
-		PUBLIC	INIT_3FBB
-
 		EXTERN	bbxNMIdisable
-		EXTERN	initConsole
 
 ; ------------------------------------------------------------------------------
 ; BYE - Exit BASIC and reboot machine with banked Game ROM
 ; (bit90: $3FB1 with modifications)
 ; ------------------------------------------------------------------------------
-BYE_3FB1:	CALL	bbxNMIdisable
+bbxHostExit:	CALL	bbxNMIdisable
 		XOR	A			; Command "BYE" / exit BASIC
 		LD	($8000),A		; $8000 = Game rom identifier ($AA $55)
 		IN	A,(IOROM0)		; Switch Mem bank to Coleco ROM
@@ -852,32 +898,11 @@ BYE_3FB1:	CALL	bbxNMIdisable
 
 ; ------------------------------------------------------------------------------
 ; BAS - Exit Game and reboot machine with banked BASIC ROM
-; (bit90: $3FB8 relocated)
+; Address $3FFD is called from bit90 game rom
+; (bit90: $3FB8 + $3FFD combined to save code space)
 ; ------------------------------------------------------------------------------
-BAS_3FB8:	IN	A,(IOROM1)		; Switch mem bank to BASIC ROM
+BAS_3FFD:	IN	A,(IOROM1)		; Switch mem bank to BASIC ROM
 		RST	$00			; Reboot
-
-; ------------------------------------------------------------------------------
-; INIT - Initialize command mode
-; (bit90: $3FBB modified)
-; ------------------------------------------------------------------------------
-INIT_3FBB:	PUSH	HL
-		CALL	INIT_32AF
-		CALL	initConsole
-		POP	HL
-		RET
-
-; ------------------------------------------------------------------------------
-; Mandatory vectors
-; ------------------------------------------------------------------------------
-
-LAB_3FEE:	JP	bbxShowDsp
-LAB_3FF1:	JP	bbxHideDsp
-LAB_3FF4:	JP	bbxSetVdpR1
-LAB_3FF7:	JP	KEYSCAN_3405
-LAB_3FFA:	JP	INIT_3FBB
-LAB_3FFD:	JP	BAS_3FB8		; Address called from Game ROM
-
 
 ; ------------------------------------
 ; *** RAM for BIT90 host variables ***
@@ -885,12 +910,9 @@ LAB_3FFD:	JP	BAS_3FB8		; Address called from Game ROM
 
 		SECTION BIT90RAM
 
-		PUBLIC	VDPR0_7014
 		PUBLIC	VDPR1_7015
 		PUBLIC	TAPE_VAR
-
 		
-VDPR0_7014:	DB	0		; Copy of VDP register 0 value (not used)
 VDPR1_7015:	DB	0		; Copy of VDP register 1 value
 
 ; BSAVE / BLOAD (bit90: $7098, the variables must be in consecutive addresses)
