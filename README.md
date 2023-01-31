@@ -1,23 +1,23 @@
-# BBX80
+﻿# BBX80
 BBC BASIC for a Z80 home computer.
 
 ## General Information
 
-In this repository you find BBC BASIC (Z80) implementation source code for a Z80 home computer that doesn’t have a Disk OS like CP/M.
+In this repository you find BBC BASIC (Z80) implementation source code for a Z80 home computer that may not have a Disk OS like CP/M.
 
 #### The system setup consists of three main blocks:
 1. BBC BASIC (Z80) implementation from R.T. Russell
 2. BBX80: general host and console functions
 3. Host computer specific functions
+
+## BIT90 / Coleco
   
 #### Host computer minimum requirements:
 * Z80 processor
-* TMS9929A / 16K VRAM or compatible video out
+* TMS9929A / 16KB VRAM or compatible video out
 * 16KB ROM or RAM for the bbx80 software
 * 2K RAM
 * Keyboard input function
-
-## BIT90
 
 #### ROM and Cartridge version of bbx80
 The implemention is done for the bit90 computer, meaning you could replace the bit90 16K BASIC ROM (2x 8K) with the ROM version of bbx80 or you can load the cartridge version from tape or make a Coleco game cartridge with the cartridge ROM image. 
@@ -30,6 +30,9 @@ Included are the core commands as in BBC BASIC Z80, without the CP/M OS commands
 * The save/load on tape worked in my configuration but your mileage may vary.  
 * It is already amazing how much functionality can be squeezed into 16K of memory, extending the command set any further will require additional ROM or RAM for the system.
 
-## Other / future plans
+#### Other computers
+Other computers that easily meet the minimum requirements are MSX1, SC3000, SV-328 and Coleco Adam.
 
-I intend to do another implementation for a rc2014ish computer, which is a more widely known. Other computers that easily meet the minimum requirements are MSX1, SC3000, SV-328 and Coleco Adam.
+## RC2014
+As a reference I have implemented the standard CP/M 2.2 (compatible) version of BBC BASIC with some enhancements for a VT100 terminal. 
+In the future there may be more enhanced editions for this Z80 platform.
