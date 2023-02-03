@@ -182,7 +182,13 @@ _endColumn:	CALL	bbxCls
 ; All cursor positioning is forward/backward 1 character (with repeat B)
 ; Last position in line contains CR
 ; ------------------------------------------------------------------------------
-bbxGetLine:	LD	A,L
+bbxGetLine:	
+IFDEF WRAPWAIT
+		LD	A,(FLAGS)
+		OR	00010000B		; Set input flag
+		LD	(FLAGS),A
+ENDIF
+		LD	A,L
 		LD	L,0
 		LD	C,L			; Set repeat flag
 		CP	L
@@ -222,6 +228,11 @@ endLine:	LD	A,(HL)
 		SUB	CR
 		JR	NZ,endLine
 		CALL	dspCRLF
+IFDEF WRAPWAIT
+		LD	A,(FLAGS)
+		AND	11101111B		; Reset input flag
+		LD	(FLAGS),A
+ENDIF
 		LD	A,C			; CR or ESC
 		RET
 
@@ -360,6 +371,21 @@ bbxDspChar:	PUSH	HL
 		JR	Z,dspCR
 		CP	' '			; Other control character?
 		JR	C,screenWrite1
+IFDEF WRAPWAIT
+		LD	B,A			; Save char
+		LD	A,(FLAGS)
+		BIT	4,A			; Input mode?
+		JR	NZ,_inputMode
+		LD	A,(bbxWIDTH)
+		DEC	A
+		CP	(HL)			; Compare X position
+		CALL	C,dspCRLF
+		LD	A,B			; Restore char
+		CALL	screenWrite
+		INC	(HL)
+		JR	endWrite		
+_inputMode:	LD	A,B
+ENDIF
 		CALL	screenWrite
 		INC	(HL)			; Increase X position
 		LD	A,(bbxWIDTH)	

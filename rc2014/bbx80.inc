@@ -27,6 +27,10 @@ ENDIF
 COLUMNS:	EQU	80		; Screen width
 SPEED:		EQU	$2000		; Processor speed indicator ($2000 for Z180/20Mhz)
 
+; When at last column wait for line wrap until next char is printed unless in input mode
+; set for vt100 compatibility
+DEFINE WRAPWAIT
+
 ; CP/M Definitions
 BDOS:		EQU	5
 FCB:		EQU	5CH

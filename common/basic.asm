@@ -127,9 +127,12 @@ OSINIT:		; Init Branch
 ; Outputs: A = character
 ; Destroys: A,F
 ; --------------------------------------------------------
-BAS_OSRDCH:	LD	A,(FLAGS)
+BAS_OSRDCH:	
+IFDEF INCDOS
+		LD	A,(FLAGS)
 		RRA				; *EXEC Active ?
 		JP	C,bbxDosExecIn
+ENDIF
 		PUSH	HL
         	SBC	HL,HL           	; HL=0
         	CALL	OSKEY
@@ -312,13 +315,13 @@ HEX:		LD	DE,0		;INITIALISE
 HEX1:		LD	A,(HL)
 		CALL	UPPRC
 		CP	'0'
-		JP	C,SKIPSP
+		JR	C,SKIPSP
 		CP	'9'+1
 		JR	C,HEX2
 		CP	'A'
-		JP	C,SKIPSP
+		JR	C,SKIPSP
 		CP	'F'+1
-		JP	NC,SKIPSP
+		JR	NC,SKIPSP
 		SUB	7
 HEX2:		AND	0FH
 		EX	DE,HL
@@ -670,7 +673,7 @@ GETIMS:		JP	bbxGetDateTime
 PUTIMS: 	JP	bbxSetDateTime
 
 ; BASIC Variables
-FLAGS:		DB	0		; Flags for keyboard input i.e escape
+FLAGS:		DB	0		; Bit 0:exec 1:spool 2:print 3:edit 4:input 5:- 6:esc off 7:esc
 TRPCNT:		DB	10		; Counter used in trap/ltrap routine
 INKEY:		DB	0
 EDPTR:		DW	0		; Edit pointer
