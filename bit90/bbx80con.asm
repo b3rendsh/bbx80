@@ -1,5 +1,5 @@
 ; ------------------------------------------------------------------------------
-; BBX80 Console v1.1
+; BBX80 Console v1.2
 ; Copyright (C) 2023 H.J. Berends
 ;
 ; You can freely use, distribute or modify this program.
@@ -19,6 +19,7 @@
 		PUBLIC	bbxGetLine
 		PUBLIC	bbxKeysOn
 		PUBLIC	bbxKeysOff
+		PUBLIC	bbxReleaseKey
 
 		PUBLIC	initConsole
 		PUBLIC	dspCursor
@@ -137,9 +138,9 @@ _update1:	LD	A,(HL)
 		CALL	NZ,bbxDspChar
 		JR	NZ,_update1
 		LD	A,' '			; Char at curpos is a space
-		CALL	bbxDspChar
+		RST	R_dspChar
 		LD	A,BS			; Cursor left
-_update2:	CALL	bbxDspChar		; Repeat char write B times
+_update2:	RST	R_dspChar		; Repeat char write B times
 		DEC	HL
 		DJNZ	_update2
 _repeatKey:	LD	A,C
@@ -158,21 +159,13 @@ _limit:		CALL	Z,keyWait		; Wait for keyboard key pressed
 		CALL	NZ,keyPressed
 		JR	_repeatKey
 
-endLine:	PUSH	HL
-		LD	HL,bbxFLSCUR
-		RES	6,(HL)
-		CALL	dspCursor
-_releaseKey:	OR	A			; Clear carry flag
-		SBC	HL,HL			; HL=0
-		CALL	OSKEY			; Wait until all keys are released
-		JR	C,_releaseKey
-		POP	HL
+endLine:	CALL	bbxReleaseKey
 _writeLine:	LD	A,(HL)
-		CALL	bbxDspChar		; Write rest of line
+		RST	R_dspChar		; Write rest of line
 		INC	HL
 		SUB	CR
 		JR	NZ,_writeLine
-		CALL	dspCRLF
+		RST	R_dspCRLF
 		LD	A,C			; Load last pressed key (CR or ESC)
 		RET
 
@@ -241,7 +234,7 @@ keyAscii:	LD	D,(HL)			; Printing Character
 		LD	(HL),A
 		INC	L
 		JR	Z,wontGo		; Line to long
-		CALL	bbxDspChar
+		RST	R_dspChar
 		LD	A,CR
 		CP	D			; Last char in buffer?
 		RET	NZ
@@ -285,7 +278,7 @@ keyLeft:	INC	L
 		JR	Z,stopRepeat
 		LD	A,BS
 		PUSH	AF			; Save Carry flag value
-		CALL	bbxDspChar
+		RST	R_dspChar
 		POP	AF
 		DEC	L
 		RET 	NC
@@ -323,13 +316,14 @@ _insert1:	INC	DE
 wontGo:		DEC	L
 		LD	(HL),CR
 		LD	A,BELL
-		CALL	bbxDspChar		; BEEP!
+		RST	R_dspChar		; BEEP!
 stopRepeat:	LD	C,0			; Stop repeat
 		RET
 
-; ----------------------------------------------
-; Convert proprietary keycodes to standard code
-; ----------------------------------------------
+; -----------------------------------------------------------------------
+; Subroutine: Convert proprietary keycodes to standard code
+; -----------------------------------------------------------------------
+
 keyConversion:	LD	HL,bbxCONVTAB
 _repeatConv:	CP	(HL)
 		JR	Z,_convertKey
@@ -342,8 +336,23 @@ _convertKey:	INC	HL
 		RET
 
 ; -----------------------------------------------------------------------
-; Subroutine : bbxDspChar
-; Display an ASCII character on the console
+; Subroutine: Hide cursor and wait until all keys are released
+; -----------------------------------------------------------------------
+bbxReleaseKey:	PUSH	AF
+		PUSH	HL
+		LD	HL,bbxFLSCUR
+		RES	6,(HL)
+		CALL	dspCursor
+_releaseKey:	OR	A			; Clear carry flag
+		SBC	HL,HL			; HL=0
+		CALL	OSKEY			; Wait until all keys are released
+		JR	C,_releaseKey
+		POP	HL
+		POP	AF
+		RET
+
+; -----------------------------------------------------------------------
+; Subroutine: Display an ASCII character on the console
 ; -----------------------------------------------------------------------
 bbxDspChar:	PUSH	BC
 		PUSH	DE

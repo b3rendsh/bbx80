@@ -6,6 +6,8 @@ BIT90 Home computer.
 
 Changelog:
 ----------
+V1.2:
+- added *BLOAD command to load Coleco games from tape (for the ROM edition)
 V1.1: 
 - improved line editor (e.g. cursor movement, escape key)
 - keywords entered in lowercase are converted to uppercase (variables are not)

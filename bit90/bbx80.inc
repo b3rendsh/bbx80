@@ -1,11 +1,11 @@
 ; ------------------------------------------------------------------------------
-; BBX80 Include v1.1
+; BBX80 Include v1.2
 ;
 ; Definitions used in BBX80 modules
 ; ------------------------------------------------------------------------------
 
 ; Version
-DEFL BBXVERSION = "V1.1"
+DEFL BBXVERSION = "V1.2"
 
 ; System settings
 VIDEOHZ:	EQU	50		; 60 for NTSC / 50 for PAL systems (used in timers)

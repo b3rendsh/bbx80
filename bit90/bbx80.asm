@@ -1,5 +1,5 @@
 ; ------------------------------------------------------------------------------
-; BBX80 v1.1
+; BBX80 v1.2
 ; 
 ; This module contains the memory map and bootcode for the BIT90 host computer.
 ; ------------------------------------------------------------------------------
@@ -91,6 +91,7 @@
 		; bit90
 		EXTERN	bbxHostInit
 		EXTERN	bbxHostExit
+		EXTERN	bbxHostBload
 		EXTERN	VDPR1_7015
 
 		; bbx80con
@@ -198,12 +199,9 @@ bbxSetTime:	CALL	bbxNMIdisable
 ; For vdp routines the NMIFLAG must be set with NMIstop and after the routine 
 ; it must be reset by calling NMIstart. 
 ; -----------------------------------------------------------------------------
-
 IFDEF BBX80ROM
 		ALIGN	$0066
-		JP	bbxNMI
-		DB	VIDEOHZ			; $0069 value 60=NTSC or 50=PAL systems 
-ENDIF						; this should be the same value as in the Coleco ROM
+ENDIF
 
 bbxNMI:		PUSH	AF
 		PUSH	HL
@@ -211,8 +209,12 @@ bbxNMI:		PUSH	AF
 		INC	(HL)			; Increase NMI counter
 
 		; count to 50 or 60 and then increase seconds
+IFDEF BBX80CART
 		; LD	A,($0069)		; If you have a Coleco ROM for your region this should work correctly
 		LD	A,VIDEOHZ		; If there's a mismatch then try this code instead
+ELSE
+		LD	A,VIDEOHZ
+ENDIF
 		CP	(HL)
 		JR	NZ,_endCount
 		XOR	A
@@ -412,7 +414,10 @@ bbxSetDateTime:	EQU	SORRY
 ; --------------------------------------------------------
 ; OS Commands / jump table
 ; --------------------------------------------------------
-bbxCOMDS:	DEFM	"BY"
+bbxCOMDS:	DEFM	"BLOA"
+		DEFB	'D'+80H
+		DEFW	bbxHostBload
+		DEFM	"BY"
 		DEFB	'E'+80H
 		DEFW	bbx80Exit
 		DEFM	"CLOA"
@@ -428,8 +433,6 @@ bbxCOMDS:	DEFM	"BY"
 		DEFB	'N'+80H
 		DEFW	bbxKeysOn
 		DEFB	0FFH
-
-
 
 
 ; -----------------------------------

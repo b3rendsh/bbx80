@@ -1,5 +1,5 @@
 ; ------------------------------------------------------------------------------
-; BBX80 Library v1.1
+; BBX80 Library v1.2
 ; Copyright (C) 2023 H.J. Berends
 ;
 ; You can freely use, distribute or modify this program.

@@ -1,5 +1,5 @@
 ; ------------------------------------------------------------------------------
-; BBX80 BIT90 HOST v1.1
+; BBX80 BIT90 HOST v1.2
 ; Copyright (C) 2023 H.J. Berends*
 ;
 ; You can freely use, distribute or modify this program.
@@ -18,6 +18,7 @@
 		PUBLIC	bbxHostExit
 		PUBLIC	bbxHostSave
 		PUBLIC	bbxHostLoad
+		PUBLIC	bbxHostBload
 		PUBLIC	bbxGetKey
 
 		; bbx80
@@ -30,10 +31,12 @@
 		EXTERN	dspStringA
 		EXTERN	bbxFLSCUR
 		EXTERN	bbxCAPSOFF
+		EXTERN	bbxReleaseKey
 
 		; basic
 		EXTERN	EXTERR
-
+		EXTERN	PAGE
+		EXTERN	SKIPSP
 
 ; --------------------------------------------------------
 ; OSSAVE - Save an area of memory to a file.
@@ -56,6 +59,16 @@ bbxHostSave:	EXX
 ;           BC = maximum allowed size (bytes)
 ; Outputs: Carry reset indicates no room for file.
 ; --------------------------------------------------------
+bbxHostBload:	PUSH	HL		; *BLOAD [GameFile]
+		LD	DE,(PAGE)
+		LD	HL,-256
+		ADD	HL,SP
+		SBC	HL,DE		; Find available space
+		LD	B,H
+		LD	C,L
+		POP	HL
+		CALL	SKIPSP
+
 bbxHostLoad:	EXX
 		PUSH	BC
 		PUSH	DE
@@ -76,6 +89,7 @@ TAPE_ERR:	RST	R_NMIstart
 		CALL	EXTERR
 		DEFM	"Tape error"
 		DB	0
+
 
 ; ---------------------------
 ; *** BIT90 host routines ***
@@ -152,8 +166,7 @@ FUN_1B6C:	LD	A,(LAB_71CB)
 		LD	(LAB_709B),HL		; Number of data bytes in block
 		CALL	FUN_1BC2
 		LD	(LAB_7099),DE		; Checksum
-		CALL	FUN_1D6E		; Save to tape
-		RET
+		JP	FUN_1D6E		; Save to tape
 
 ; Calculate block checksum
 FUN_1BC2:	LD	BC,$010D		; 13 control + 256 data = 269 byte counter
@@ -215,20 +228,17 @@ FUN_1C2E:	RST	R_dspTell
 		DB	0
 _getReady:	CALL	dspCursor
 		CALL	bbxGetKey
-		OR	A
 		JR	Z,_getReady
-		LD	HL,bbxFLSCUR
-		RES	6,(HL)
-		CALL	dspCursor
 		RST	R_dspChar
+		CALL	bbxReleaseKey
 		CP 	'Y'
 		RET
 
 ; Save block to tape
 FUN_1D6E:	LD	BC,$0110		; 16 control + 256 data bytes
 		LD	HL,LAB_7098		; Buffer
-		CALL	FUN_1DB7		; Write to tape
-		RET
+		JR	FUN_1DB7		; Write to tape
+
 
 ; display filename and calculate checksum
 FUN_1D84:	LD	HL,LAB_70A8
@@ -786,16 +796,13 @@ LAB_340A:	LD	A,B
 		JR	NZ,LAB_341D
 LAB_3417:	DEC	B
 		JP	P,LAB_340A
-		JR	LAB_3423
-
-LAB_341D:	LD	D,A
-		CALL	FUN_3428
-		JR	LAB_3417
-
 LAB_3423:	LD	A,$FF
 		AND	A
 		POP	BC
 		RET
+LAB_341D:	LD	D,A
+		CALL	FUN_3428
+		JR	LAB_3417
 
 FUN_3428:	LD	C,$07
 		LD	A,D
@@ -879,30 +886,40 @@ SCANCODES:	DB	$2D,$37,$33,$5C,$F5,$31,$35,$39
 
 		SECTION	BIT90VEC 
 
-IFDEF BBX80ROM
-		ORG	$3FF3
-ENDIF
-
-
 		EXTERN	bbxNMIdisable
 
 ; ------------------------------------------------------------------------------
 ; BYE - Exit BASIC and reboot machine with banked Game ROM
 ; (bit90: $3FB1 with modifications)
 ; ------------------------------------------------------------------------------
+
+; ------------------------------------------------------------------------------
+; End for BBX80 Cartridge 16k edition.
+; ------------------------------------------------------------------------------
+IFDEF BBX80CART
 bbxHostExit:	CALL	bbxNMIdisable
 		XOR	A			; Command "BYE" / exit BASIC
 		LD	($8000),A		; $8000 = Game rom identifier ($AA $55)
+		RST	$00
+ENDIF
+
+; ------------------------------------------------------------------------------
+; End for BBX80 ROM 16k edition.
+; ------------------------------------------------------------------------------
+IFDEF BBX80ROM
+		ORG	$3FF1
+
+bbxHostExit:	CALL	bbxNMIdisable
 		IN	A,(IOROM0)		; Switch Mem bank to Coleco ROM
 		RST	$00			; Reboot
 
-; ------------------------------------------------------------------------------
-; BAS - Exit Game and reboot machine with banked BASIC ROM
-; Address $3FFD is called from bit90 game rom
-; (bit90: $3FB8 + $3FFD combined to save code space)
-; ------------------------------------------------------------------------------
+LAB_3FF7:	JP	KEYSCAN_3405		; Called from bit90 game rom
+LAB_3FFA:	RET				; Init bit90 basic commandline (not used)
+		DB	0,0
 BAS_3FFD:	IN	A,(IOROM1)		; Switch mem bank to BASIC ROM
 		RST	$00			; Reboot
+
+ENDIF
 
 ; ------------------------------------
 ; *** RAM for BIT90 host variables ***
