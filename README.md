@@ -16,7 +16,7 @@ In this repository you find BBC BASIC (Z80) implementation source code for a Z80
 * Z80 processor
 * TMS9929A / 16KB VRAM or compatible video out
 * 16KB ROM or RAM for the bbx80 software
-* 2K RAM
+* 2KB RAM
 * Keyboard input function
 
 #### ROM and Cartridge version of bbx80
@@ -25,11 +25,6 @@ The implemention is done for the bit90 computer, meaning you could replace the b
 The Game ROM (Coleco compatible) is only used to start the system, the BIT90 ROM is not used or only to boot the system from tape. The Coleco ROM routines will still be avaible after boot, so you can call them from the inline assembler.
 #### Features
 Included are the core commands as in BBC BASIC Z80, without the CP/M OS commands. Additional commands: save/load to tape, plot, point, draw, move, keyson, keysoff, bye, colour, gcol and cload/csave via rs232. There is a branch table to extend basic and a mixed text/graphics screen with 50x24 characters, 256x192 pixels and 16 colors.   
-#### Limitations
-* I have tested the cartridge (i.e. tape) version on the real hardware and in the mame emulator, the ROM version is only tested in mame so far. 
-* The save/load on tape worked in my configuration but your mileage may vary.  
-* It is already amazing how much functionality can be squeezed into 16K of memory, extending the command set any further will require additional ROM or RAM for the system.
-
 #### Other computers
 Other computers that easily meet the minimum requirements are MSX1, SC3000, SV-328 and Coleco Adam.
 
