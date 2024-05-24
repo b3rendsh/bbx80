@@ -41,7 +41,7 @@ As a reference I have implemented the standard CP/M 2.2 (compatible) version of 
 Includes VT100 console and TMS9918A or compatible graphics card commands.
 
 **C: Advanced**
-Includes VT100 console, TMS9918A graphics card commands and the latest additional features . This editions requires a system with RomWBW.
+Includes VT100 console, TMS9918A graphics card commands and the latest additional features . This edition requires a system with RomWBW.
 
 ## Other computers
 Other computers that easily meet the minimum requirements are MSX1, SC3000, SV-328 and Coleco Adam.
