@@ -1,11 +1,25 @@
 ; ------------------------------------------------------------------------------
-; BBX80 Include v1.2
+; BBX80 Include v1.3
 ;
-; Definitions used in BBX80 modules
+; Definitions used in BBX80 and BASIC modules
 ; ------------------------------------------------------------------------------
 
 ; Version
-DEFL BBXVERSION = "V1.2"
+DEFL BASVERSION = "V3.0"
+DEFL BBXVERSION = "V1.3"
+
+; BASIC Directives
+DEFINE	TITLESCREEN	; Credits in title screen
+DEFINE	BBX80		; BBX80 modifications in the BASIC code
+
+; Modules
+;DEFINE	INCDOS		; Include DOS (CP/M) functions
+DEFINE	INCVDP		; Include graphics module
+;DEFINE	INCPSG		; Include sound module
+DEFINE	INCSER		; Include serial file transfer module
+DEFINE	INCRTC		; Include realtime clock / timer module
+;DEFINE	INCGPIO		; Include GPIO module (e.g. joystick ports)
+
 
 ; System settings
 VIDEOHZ:	EQU	50		; 60 for NTSC / 50 for PAL systems (used in timers)
@@ -17,8 +31,8 @@ SPEED:		EQU	$600		; Processor speed indicator (Z80/3.6Mhz)
 R_dspCRLF:	EQU	$08
 R_dspTell:	EQU	$10
 R_dspChar:	EQU	$18
-R_NMIstop:	EQU	$20
-R_NMIstart:	EQU	$28
+R_IRQstop:	EQU	$20
+R_IRQstart:	EQU	$28
 
 ; I/O Ports (BIT90)
 IOCOM0:		EQU	$44		; RS232 Data I/O
@@ -42,37 +56,15 @@ IOPSG0:		EQU	$FF		; SN74689AN Sound control
 IOKEY0:		EQU	$F8		; Keyboard
 IOKEY1:		EQU	$CF		; Keyboard
 
-; ASCII Control Characters
-CUU:		EQU	$01		; Ctrl-A Cursor up
-CUD:		EQU	$02		; Ctrl-B Cursor down
-CUF:		EQU	$03		; Ctrl-C Cursor right
-CUB:		EQU	$04		; Ctrl-D Cursor left
-KHOME:		EQU	$05		; Ctrl-E Home
-KEND:		EQU	$06		; Ctrl-F End
-BELL:		EQU	$07		; Ctrl-G Bell
-BS:		EQU	$08		; Ctrl-H Backspace (cursor left)
-TAB:		EQU	$09		; Ctrl-I Tab
-LF:		EQU	$0A		; Ctrl-J Linefeed (cursor down)
-ERARIGHT:	EQU	$0B		; Ctrl-K Erase cursor to end
-CR:		EQU	$0D		; Ctrl-M Enter (cursor home)
-INS:		EQU	$0E		; Ctrl-N Insert space
-DEL:		EQU	$0F		; Ctrl-O Delete char
-PECHO:		EQU	$10		; Ctrl-P Toggle echo to printer
-KCONT:		EQU	$11		; Ctrl-Q Continue scroll
-KSCROLL:	EQU	$13		; Ctrl-S Stop scroll
-ERALEFT:	EQU	$18		; Ctrl-X Erase to home
-ESC:		EQU	$1B		; Ctrl-[ Escape
+; ------------------------------------------------------------------------------
+; Global variables, defined in common/basic.asm
 
-; Control Characters not used
-; $0C Ctrl-L Page Up
-; $12 Ctrl-R Redisplay
-; $14 Ctrl-T Page Down
-; $15 Ctrl-U Cancel line
-; $16 Ctrl-V -
-; $17 Ctrl-W Recall
-; $19 Ctrl-Y -
-; $1A Ctrl-Z Terminate input
-; $1C Ctrl-\ PF1
-; $1D Ctrl-] PF2
-; $1E Ctrl-~ PF3
-; $1F Ctrl-? PF4
+; BASIC routines 
+GLOBAL	SORRY
+GLOBAL	STUB
+
+; BASIC variables
+GLOBAL	PT_KEYWDS
+GLOBAL	PT_KEYWDL
+GLOBAL	PT_CMDTAB
+GLOBAL	PT_FUNTBL

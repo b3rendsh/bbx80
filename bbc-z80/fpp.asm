@@ -21,8 +21,10 @@
 ;                               EXPONENT - B
 ;
 
-	INCLUDE	"BASIC.INC"
+INCLUDE	"bbx80.inc"
+IFDEF BBX80
 	SECTION BASIC
+ENDIF
 
 ;Error codes:
 ;

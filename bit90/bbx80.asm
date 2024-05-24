@@ -1,11 +1,15 @@
 ; ------------------------------------------------------------------------------
-; BBX80 v1.2
-; 
-; This module contains the memory map and bootcode for the BIT90 host computer.
+; BBX80 v1.3
+
+; You can freely use, distribute or modify this program.
+; It is provided freely and "as it is" in the hope that it will be useful, 
+; but without any warranty of any kind, either expressed or implied.
+; ------------------------------------------------------------------------------
+; Memory map and bootcode for the BIT90 host computer.
 ; ------------------------------------------------------------------------------
 
-		INCLUDE	"BBX80.INC"
-		INCLUDE	"BASIC.INC"
+		INCLUDE	"bbx80.inc"
+		INCLUDE	"console.inc"
 
 ; ------------------
 ; *** Memory map ***
@@ -15,12 +19,14 @@
 		;DEFINE	BBX80ROM		
 		;DEFINE	BBX80CART
 
-		SECTION BOOT			; Start / Page 0
+		SECTION BBX80			; Boot machine
 		SECTION	BASIC			; BBC BASIC interpreter
 		SECTION	BASICASM		; BBC BASIC inline assembler
 		SECTION	BIT90HOST		; BIT90 host routines
 		SECTION	BBX80CON		; BBX80 console
 		SECTION BBX80LIB		; BBX80 library
+		SECTION	STATIC1			; BASIC static variables data
+		SECTION	STATIC2			; BBX80 static variables data
 		SECTION	BIT90VEC		; BIT90 required code at end of ROM
 
 		; The Colecovision has 1K internal RAM: $7000-$73FF
@@ -28,10 +34,9 @@
 
 		SECTION	BASICRAM		; BBC BASIC RAM variables (768 bytes + 256 VDP buffer)
 		ORG	$7000
-
-		SECTION BBX80VAR		; BBX80 Initialized variables
+		SECTION BASICVAR		; BASIC Initialized variables
 		ORG	$7400		
-
+		SECTION BBX80VAR		; BBX80 Initialized variables
 		SECTION	BBX80RAM		; BBX80 variables (dynamic)
 		SECTION	BIT90RAM		; BIT90 host variables (dynamic)
 		SECTION	BBX80FREE		; Remaining free internal RAM for user
@@ -41,52 +46,32 @@
 ; *** Boot the BIT90 host machine / cartrdige ***
 ; -----------------------------------------------
 
-		SECTION	BOOT
+		SECTION	BBX80
 
 		PUBLIC	bbx80Init
-		PUBLIC	bbxNMIenable
-		PUBLIC	bbxNMIdisable
+		PUBLIC	bbxIRQenable
+		PUBLIC	bbxIRQdisable
 		PUBLIC	bbxShowDsp
 		PUBLIC	bbxHideDsp
 		PUBLIC	bbxSetVdpR1
 		PUBLIC	bbxSetTime
 		PUBLIC	bbxGetTime
 		PUBLIC	bbxCOMDS
-		
-		; dos not implemented
-		PUBLIC	bbxDosOpen
-		PUBLIC	bbxDosShut
-		PUBLIC	bbxDosBget
-		PUBLIC	bbxDosBput
-		PUBLIC	bbxDosStat
-		PUBLIC	bbxDosGetext
-		PUBLIC	bbxDosGetPtr
-		PUBLIC	bbxDosPutPtr
-		PUBLIC	bbxDosReset
-		PUBLIC	bbxDosCall
-		PUBLIC	bbxDosDot
-		PUBLIC	bbxDosDir
-		PUBLIC	bbxDosExecIn
 
-		; commands not implemented
-		PUBLIC	bbxPsgEnvelope
+		; Not implemented
+		PUBLIC	bbxClg
 		PUBLIC	bbxDspMode
-		PUBLIC	bbxPsgSound
-		PUBLIC	bbxAdval
 		PUBLIC	bbxGetDateTime
 		PUBLIC	bbxSetDateTime
 
 		; basic
-		EXTERN	CSAVE
-		EXTERN	CLOAD
 		EXTERN	START
 		EXTERN	PBCDL
+		EXTERN	CSAVE
+		EXTERN	CLOAD
 		EXTERN	EXTERR
-		EXTERN	SORRY
-		EXTERN	bbxNMIUSR
-		EXTERN	bbxNMICOUNT
-		EXTERN	bbxNMIFLAG
-		EXTERN	bbxSECONDS
+		EXTERN	VAR1_START
+		EXTERN	VAR1_RAM
 
 		; bit90
 		EXTERN	bbxHostInit
@@ -99,8 +84,8 @@
 		EXTERN	bbxDspChar
 		EXTERN	bbxKeysOn
 		EXTERN	bbxKeysOff
-		EXTERN	dspCRLF
 		EXTERN	dspTell
+		EXTERN	dspCRLF
 
 		; bbx80lib
 		EXTERN	bbxComLoad
@@ -122,9 +107,9 @@ RST_10:		JP	dspTell
 		DEFS	5,$00
 RST_18:		JP	bbxDspChar
 		DEFS	5,$00
-RST_20:		JP	bbxNMIstop
+RST_20:		JP	bbxIRQstop
 		DEFS	5,$00
-RST_28:		JP	bbxNMIstart
+RST_28:		JP	bbxIRQstart
 		DEFS	5,$00
 RST_30:		RET			; Not used
 		DEFS	2,$00
@@ -146,8 +131,8 @@ START_GAME:	DW	START			; $800A
 RST_08H_RAM:	JP	dspCRLF			; $800C
 RST_10H_RAM:	JP	dspTell			; $800F
 RST_18H_RAM:	JP	bbxDspChar		; $8012
-RST_20H_RAM:	JP	bbxNMIstop		; $8015
-RST_28H_RAM:	JP	bbxNMIstart		; $8018
+RST_20H_RAM:	JP	bbxIRQstop		; $8015
+RST_28H_RAM:	JP	bbxIRQstart		; $8018
 RST_30H_RAM:	DB	$C9,$00,$00		; $801B
 IRQ_INT_VECT:	DB	$C9,$00,$00		; $801E
 NMI_INT_VECT:	JP	bbxNMI			; $8021
@@ -160,21 +145,22 @@ GAME_NAME:	DB	"BBBX80 ",$1D," 2022 H.J.BERENDS/"
 ENDIF
 
 ; ------------------------------------------------------------------------------
-; Stop/start the NMI routine to prevent VDP RAM addressing issues / screen artifacts.
-; This works fasters and is more reliable than frequent use of NMI enable/disable.
+; Stop/start the IRQ routine to prevent VDP RAM addressing issues / screen artifacts.
+; This works fasters and is more reliable than frequent use of IRQ enable/disable.
 ; Alternative is the Colecovision vdp deferred queue, but that takes more code space.
-; Stopping/starting NMI can be used in nested routines, a counter is added to support this.
+; Stopping/starting IRQ can be used in nested routines, a counter is added to support this.
+; The only IRQ used by the bit90 is the NMI from the VDP.
 ; ------------------------------------------------------------------------------
-bbxNMIstop:	PUSH	HL
-		LD	HL,bbxNMIFLAG
+bbxIRQstop:	PUSH	HL
+		LD	HL,IRQFLAG
 		INC	(HL)
 		POP	HL
 		RET
 
-bbxNMIstart:	PUSH	AF
-		LD	A,(bbxNMIFLAG)
+bbxIRQstart:	PUSH	AF
+		LD	A,(IRQFLAG)
 		DEC	A
-		LD	(bbxNMIFLAG),A
+		LD	(IRQFLAG),A
 		JR	NZ, _endResetIrq
 		IN	A,(IOVDP1)
 _endResetIrq:	POP	AF
@@ -184,20 +170,20 @@ _endResetIrq:	POP	AF
 ; PUTIME - Set elapsed-time clock.
 ; Inputs: DEHL = time to load (seconds)
 ;
-; In the BBX80 NMI only seconds are counted, not centiseconds.
+; In the BBX80 interrupt handler only seconds are counted, not centiseconds.
 ; ------------------------------------------------------------------------------
-bbxSetTime:	CALL	bbxNMIdisable
-		LD	(bbxSECONDS),HL
-        	LD	(bbxSECONDS+2),DE
-		JP	bbxNMIenable
+bbxSetTime:	CALL	bbxIRQdisable
+		LD	(SECONDS),HL
+        	LD	(SECONDS+2),DE
+		JP	bbxIRQenable
 
 ; -----------------------------------------------------------------------------
 ; NMI - must start at address $066 when in ROM
 ; If necessary move the routines from above this point
 ; On the BIT90 the NMI is attached to the TMS9929A VDP interrupt pin
 ; It will be triggered every VSYNC (50 or 60 times per second)
-; For vdp routines the NMIFLAG must be set with NMIstop and after the routine 
-; it must be reset by calling NMIstart. 
+; For vdp routines the IRQFLAG must be set with IRQstop and after the routine 
+; it must be reset by calling IRQstart. 
 ; -----------------------------------------------------------------------------
 IFDEF BBX80ROM
 		ALIGN	$0066
@@ -205,8 +191,8 @@ ENDIF
 
 bbxNMI:		PUSH	AF
 		PUSH	HL
-		LD	HL,bbxNMICOUNT
-		INC	(HL)			; Increase NMI counter
+		LD	HL,IRQCOUNT
+		INC	(HL)			; Increase IRQ counter
 
 		; count to 50 or 60 and then increase seconds
 IFDEF BBX80CART
@@ -219,22 +205,22 @@ ENDIF
 		JR	NZ,_endCount
 		XOR	A
 		LD	(HL),A
-		LD	HL,(bbxSECONDS)
+		LD	HL,(SECONDS)
 		INC	HL			; Count seconds 
-		LD	(bbxSECONDS),HL
+		LD	(SECONDS),HL
 		LD	A,H
 		OR	L
 		JR	NZ,_endCount
-		LD	HL,(bbxSECONDS+2)		 
+		LD	HL,(SECONDS+2)		 
 		INC	HL
-		LD	(bbxSECONDS+2),HL
-_endCount:	LD	A,(bbxNMIFLAG)		; Is there a vdp routine running?
+		LD	(SECONDS+2),HL
+_endCount:	LD	A,(IRQFLAG)		; Is there a vdp routine running?
 		OR	A
 		JR	NZ,_endNMI
 		IN	A,(IOVDP1)		; Reset interrupt flag (also destroys vdp address register)
-		LD	A,(bbxNMIUSR)
+		LD	A,(IRQUSR)
 		CP	$C3			; Test for user interrupt vector
-		CALL	Z,bbxNMIUSR
+		CALL	Z,IRQUSR
 _endNMI:	POP	HL
 		POP	AF
 		RETN
@@ -243,18 +229,18 @@ _endNMI:	POP	HL
 ; VPD interrupt related routines (replaces bit90 SETMOD)
 ; ------------------------------------------------------------------------------
 
-; Disable/enable NMI 
+; Disable/enable IRQ 
 ; Cannot be nested, frequent usage may cause video artifacts.
-bbxNMIenable:	PUSH	AF
+bbxIRQenable:	PUSH	AF
 		XOR	A
-		LD	(bbxNMIFLAG),A
+		LD	(IRQFLAG),A
 		LD	A,(VDPR1_7015)
 		SET	5,A			; Interrupt Bit
 		JR	saveVdpR1
 
-bbxNMIdisable:	PUSH	AF
+bbxIRQdisable:	PUSH	AF
 		LD	A,1
-		LD	(bbxNMIFLAG),A
+		LD	(IRQFLAG),A
 		LD	A,(VDPR1_7015)
 		RES	5,A			; Interrupt Bit
 		JR	saveVdpR1
@@ -283,18 +269,27 @@ bbxSetVdpR1:	IN	A,(IOVDP1)		; reset interrupt on the vdp
 ; GETIME - Read elapsed-time clock.
 ; Outputs: DEHL = elapsed time (seconds)
 ;
-; In the BBX80 NMI only seconds are counted, not centiseconds.
+; In the BBX80 interrupt handler only seconds are counted, not centiseconds.
 ; ------------------------------------------------------------------------------
-bbxGetTime:	CALL	bbxNMIdisable
-		LD	HL,(bbxSECONDS)
-		LD	DE,(bbxSECONDS+2)
-		JR	bbxNMIenable
+bbxGetTime:	CALL	bbxIRQdisable
+		LD	HL,(SECONDS)
+		LD	DE,(SECONDS+2)
+		JR	bbxIRQenable
 
 ; -----------------------------------------------------------------------------
-; Initialize bit90 host
-; Initialize console
+; OSINIT - Initialise branch table and start bbx80 init
+;  Outputs: DE = initial value of HIMEM (top of RAM)
+;           HL = initial value of PAGE (user program)
+;           Z-flag reset indicates AUTO-RUN.
+; Destroys: A,B,C,D,E,H,L,F
 ; -----------------------------------------------------------------------------
-bbx80Init:	; Test available expansion memory 
+bbx80Init:	; Init Branch table and Variables
+		LD	HL,VAR1_START		; Source
+		LD	DE,VAR1_RAM		; Destination
+		LD	BC,VAR2_END-VAR1_START	; Number of bytes to copy
+		LDIR				; Copy data
+
+		; Test available expansion memory 
 		; Note: himem in bbc basic is first unusable byte and in bit90 last usable byte
 
 IFDEF BBX80CART
@@ -373,7 +368,7 @@ ENDIF
 		DB	CR,LF
 		DB	0 
 
-		CALL	bbxNMIenable
+		CALL	bbxIRQenable
 
 		; Get saved himem and page, while switching hl and de
 		POP	HL			; PAGE 
@@ -390,24 +385,9 @@ bbx80Exit:	EQU	bbxHostExit
 ; ------------------------------------------------------------------------------
 ; Not implemented
 ; ------------------------------------------------------------------------------
-bbxDosOpen:
-bbxDosShut:
-bbxDosBget:
-bbxDosBput:
-bbxDosStat:
-bbxDosGetext:
-bbxDosGetPtr:
-bbxDosPutPtr:
-bbxDosReset:
-bbxDosCall:	
-bbxDosDot:
-bbxDosDir:
-bbxDosExecIn:	RET
 
-bbxPsgEnvelope:	EQU	SORRY
+bbxClg:		EQU	STUB
 bbxDspMode:	EQU	SORRY
-bbxPsgSound:	EQU	SORRY
-bbxAdval:	EQU	SORRY
 bbxGetDateTime:	EQU	SORRY
 bbxSetDateTime:	EQU	SORRY
 
@@ -433,6 +413,69 @@ bbxCOMDS:	DEFM	"BLOA"
 		DEFB	'N'+80H
 		DEFW	bbxKeysOn
 		DEFB	0FFH
+
+
+; --------------------------
+; *** Static Data 2 of 2 ***
+; --------------------------
+
+		SECTION	STATIC2
+
+		PUBLIC	VAR2_END
+
+; Initial RAM variable values
+; This table must exactly match with the VAR2_RAM table below!
+
+VAR2_START:	DB	$C9,$00,$00	; IRQUSR	IRQ interrupt routine extension (executed at end of Vsync routine)
+		DB	0		; IRQFLAG	IRQ Flag
+		DB	0		; IRQCOUNT	IRQ Counter
+		DW	0,0		; SECONDS	Elapsed seconds since boot (approx.)
+		DB	$FF		; BUFLEN	Set input buffer length to max 255 (Byte 256 reserved for CR)
+		DB	$18		; MAXLIN	Maximum linenumber + 1
+		DB	$F0		; TXTCOLOR	Text color ($F0 is white on transparant)
+		DB	0		; INVCHAR	Inverse character (inverse color)
+		DB	1		; CONKEYS	Keyboard click sound on or off
+		DB	0		; bbxCAPSOFF	The BIT90 has no capslock but a caps lower button, 0 means caps on
+		DB	0		; bbxCOMSPEED	Baudrate selection (2400 Baud)
+		DB	78		; bbxCOMMODE	Baudrate divder / bits / parity / stopbits  (8N1)
+		DB	28		; bbxCOMTIMEOUT	Timeout (20sec.)
+VAR2_END:
+
+; -------------------------------------------
+; *** RAM for initialized BBX80 variables *** 
+; -------------------------------------------
+
+		SECTION	BBX80VAR
+
+		PUBLIC	IRQUSR
+		PUBLIC	IRQFLAG
+		PUBLIC	IRQCOUNT
+		PUBLIC	SECONDS
+		PUBLIC	BUFLEN
+		PUBLIC	MAXLIN
+		PUBLIC	TXTCOLOR
+		PUBLIC	INVCHAR
+		PUBLIC	CONKEYS
+		PUBLIC	CAPSOFF
+		PUBLIC	COMSPEED
+		PUBLIC	COMMODE
+		PUBLIC	COMTIMEOUT
+
+VAR2_RAM:
+
+IRQUSR:		DS	3
+IRQFLAG:	DS	1
+IRQCOUNT:	DS	1
+SECONDS:	DS	4
+BUFLEN:		DS	1
+MAXLIN:		DS	1
+TXTCOLOR:	DS	1
+INVCHAR:	DS	1
+CONKEYS:	DS	1		
+CAPSOFF:	DS	1		
+COMSPEED:	DS	1
+COMMODE:	DS	1
+COMTIMEOUT:	DS	1
 
 
 ; -----------------------------------

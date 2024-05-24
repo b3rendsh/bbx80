@@ -1,5 +1,5 @@
 ; ------------------------------------------------------------------------------
-; BASIC v1.0
+; BASIC v1.1
 ; 
 ; This module contains a BBC BASIC Z80 wrapper for the BBX80 modules:
 ; + commands that are OS dependent (cmos).
@@ -9,10 +9,10 @@
 ; + generic BASIC I/O functions
 ; ------------------------------------------------------------------------------
 
-		INCLUDE	"BBX80.INC"
-		INCLUDE	"BASIC.INC"
-
 		SECTION	BASIC
+
+		INCLUDE	"bbx80.inc"
+		INCLUDE "console.inc"
 
 		PUBLIC	OSINIT
 		PUBLIC	COLOUR
@@ -32,6 +32,7 @@
 		PUBLIC	HUH
 		PUBLIC	HEX
 		PUBLIC	ABORT
+		PUBLIC	VAR1_START
 
 		; basic
 		EXTERN	EXTERR
@@ -55,72 +56,63 @@
 		; bbx80
 		EXTERN	bbxCOMDS
 		EXTERN	bbx80Init
-		EXTERN	bbxSetTime
-		EXTERN	bbxGetTime
-
+		EXTERN	bbxCls
 		EXTERN	bbxGetKey
 		EXTERN	bbxGetLine
 		EXTERN	bbxDspChar
 		EXTERN	bbxDspPrompt
-		EXTERN	bbxCls
-		EXTERN	bbxClg
 		EXTERN	bbxSetCursor
 		EXTERN	bbxGetCursor
 		EXTERN	bbxKeysOff
 		EXTERN	bbxKeysOn
 		EXTERN	bbxSetColor
-
-		EXTERN	bbxDrawLine
-		EXTERN	bbxGetPixel
-		EXTERN	bbxPlotPixel
-		EXTERN	bbxComLoad
-		EXTERN	bbxComSave
-
 		EXTERN	bbxHostSave
 		EXTERN	bbxHostLoad
-		EXTERN	bbxDosOpen
-		EXTERN	bbxDosBget
-		EXTERN	bbxDosBput
-		EXTERN	bbxDosStat
-		EXTERN	bbxDosGetext
-		EXTERN	bbxDosGetPtr
-		EXTERN	bbxDosPutPtr
-		EXTERN	bbxDosShut
-		EXTERN	bbxDosReset
-		EXTERN	bbxDosCall
-		EXTERN	bbxDosDot
-		EXTERN	bbxDosDir
-		EXTERN	bbxDosExecIn
+		
+		EXTERN	TXTCOLOR
+		EXTERN	GCOLOR
+		EXTERN	GCURPOS
+		EXTERN	SECONDS
 
-		EXTERN	bbxPsgEnvelope
-		EXTERN	bbxDspMode
-		EXTERN	bbxPsgSound
-		EXTERN	bbxAdval
-		EXTERN	bbxGetDateTime
-		EXTERN	bbxSetDateTime
+		; optional modules
+		GLOBAL	bbxSetTime
+		GLOBAL	bbxGetTime
+		GLOBAL	bbxGetDateTime
+		GLOBAL	bbxSetDateTime
 
-		EXTERN	bbxTXTCOLOR
-		EXTERN	bbxGCOLOR
-		EXTERN	bbxGCURPOS
+		GLOBAL	bbxClg
+		GLOBAL	bbxDrawLine
+		GLOBAL	bbxGetPixel
+		GLOBAL	bbxPlotPixel
+		GLOBAL	bbxSetGfxColor
+		GLOBAL	bbxDspMode
+
+		GLOBAL	bbxDosOpen
+		GLOBAL	bbxDosBget
+		GLOBAL	bbxDosBput
+		GLOBAL	bbxDosStat
+		GLOBAL	bbxDosGetext
+		GLOBAL	bbxDosGetPtr
+		GLOBAL	bbxDosPutPtr
+		GLOBAL	bbxDosShut
+		GLOBAL	bbxDosReset
+		GLOBAL	bbxDosCall
+		GLOBAL	bbxDosDot
+		GLOBAL	bbxDosDir
+		GLOBAL	bbxDosExecIn
+
+		GLOBAL	bbxComLoad
+		GLOBAL	bbxComSave
+
+		GLOBAL	bbxPsgEnvelope
+		GLOBAL	bbxPsgSound
+
+		GLOBAL	bbxAdval
+
 
 ; --------------------------
 ; *** OS Commands (cmos) ***
 ; --------------------------
-
-; ------------------------------------------------------------------------------
-; OSINIT - Initialise branch table and start bbx80 init
-;  Outputs: DE = initial value of HIMEM (top of RAM)
-;           HL = initial value of PAGE (user program)
-;           Z-flag reset indicates AUTO-RUN.
-; Destroys: A,B,C,D,E,H,L,F
-; ------------------------------------------------------------------------------
-OSINIT:		; Init Branch
-		LD	HL,VAR_START		; Source
-		LD	DE,VAR_RAM		; Destination
-		LD	BC,VAR_END-VAR_START	; Number of bytes to copy (calculated by assembler)
-		LDIR				; Copy initial pointer table to RAM
-
-		JP	bbx80Init		; Init host and console
 
 ; --------------------------------------------------------
 ; OSRDCH - Read from the current input stream (keyboard).
@@ -335,7 +327,7 @@ HEX2:		AND	0FH
 		INC	HL
 		JR	HEX1
 ELSE
-HEX:		RET
+HEX:		EQU	STUB
 ENDIF
 
 ; --------------------------------------------------------
@@ -449,26 +441,29 @@ CSAVE:		CALL	SETTOP		; Set TOP
 ; ------------------------------
 
 ; ------------------------------------------------------------------------------
-; COLOUR and GCOL
+; COLOUR
 ; Set the textcolor or graphics color
 ; ------------------------------------------------------------------------------
-COLOUR:		LD	DE,bbxTXTCOLOR
-		JR	setColor
-
-GCOL:		LD	DE,bbxGCOLOR
-setColor:	PUSH	DE			; EXPRI routine may destroy DE 
-		CALL	EXPRI
+COLOUR:		CALL	EXPRI
 		EXX
-		POP	DE
+		LD	DE,TXTCOLOR
 		CALL	bbxSetColor
 		JP	XEQ
 
 ; ------------------------------------------------------------------------------
-; Plotting commands
+; Graphics commands
 ; ------------------------------------------------------------------------------
+
+IFDEF INCVDP
+GCOL:		CALL	EXPRI
+		EXX
+		LD	DE,GCOLOR
+		CALL	bbxSetGfxColor
+		JP	XEQ
+
 BAS_PLOT:	CALL	paramPlotXY
 		CALL	bbxPlotPixel
-		LD	(bbxGCURPOS),DE
+		LD	(GCURPOS),DE
 		JP	XEQ
 
 BAS_POINT:	CALL	paramPlotXY
@@ -485,15 +480,15 @@ _point1:	LD	L,A
 		JP	BRAKET
 
 DRAW:		CALL	paramPlotXY		; D=y1, E=x1 (end)
-		LD	HL,(bbxGCURPOS)		; H=y0, L=x0 (start)
+		LD	HL,(GCURPOS)		; H=y0, L=x0 (start)
 		PUSH	DE
 		CALL	bbxDrawLine
 		POP	DE
-		LD	(bbxGCURPOS),DE
+		LD	(GCURPOS),DE
 		JP	XEQ
 
 MOVE:		CALL	paramPlotXY
-		LD	(bbxGCURPOS),DE
+		LD	(GCURPOS),DE
 		JP	XEQ
 
 paramPlotXY:	CALL	EXPRI
@@ -509,10 +504,30 @@ paramPlotXY:	CALL	EXPRI
 _moveY:		POP	DE
 		LD	D,A
 		RET
+
+ELSE
+GCOL:		EQU	SORRY
+BAS_PLOT:	EQU	SORRY
+BAS_POINT:	EQU	SORRY
+DRAW:		EQU	SORRY
+MOVE:		EQU	SORRY
+bbxDspMode:	EQU	SORRY
+bbxClg:		EQU	SORRY
+
+ENDIF
+
+; -----------------------------------------------------------------------------
+; Label translatations
 ; -----------------------------------------------------------------------------
 
+OSINIT:		EQU	bbx80Init
 CLRSCN:		EQU	bbxCls
-CLG:		EQU	bbxClg
+IFNDEF BIT90
+CLG:		CALL	bbxClg
+		JP	XEQ
+ELSE
+CLG:		EQU	CLS
+ENDIF
 PUTIME:		EQU	bbxSetTime
 GETIME:		EQU	bbxGetTime
 PUTCSR:		EQU	bbxSetCursor
@@ -526,18 +541,68 @@ SORRY:	        XOR     A
         	DEFM    "Sorry"
         	DEFB    0
 
-; -------------------
-; *** Static Data ***
-; -------------------
+STUB:		RET
+
+IFNDEF INCRTC
+bbxSetTime:	LD	(SECONDS),HL
+        	LD	(SECONDS+2),DE
+		RET
+bbxGetTime:	LD	HL,(SECONDS)
+		LD	DE,(SECONDS+2)
+		RET
+bbxGetDateTime:	EQU	SORRY
+bbxSetDateTime:	EQU	SORRY
+ENDIF
+
+IFNDEF INCGPIO
+bbxAdval:	EQU	SORRY
+ENDIF
+
+IFNDEF INCDOS
+bbxDosOpen:	EQU	STUB
+bbxDosShut:	EQU	STUB
+bbxDosBget:	EQU	STUB
+bbxDosBput:	EQU	STUB
+bbxDosStat:	EQU	STUB
+bbxDosGetext:	EQU	STUB
+bbxDosGetPtr:	EQU	STUB
+bbxDosPutPtr:	EQU	STUB
+bbxDosReset:	EQU	STUB
+bbxDosCall:	EQU	STUB
+bbxDosDot:	EQU	STUB
+bbxDosDir:	EQU	STUB
+bbxDosExecIn:	EQU	STUB
+ENDIF
+
+IFNDEF INCSER
+bbxComSave:	EQU	STUB
+bbxComLoad:	EQU	STUB
+ENDIF
+
+IFNDEF INCPSG
+bbxPsgEnvelope:	EQU	SORRY
+bbxPsgSound:	EQU	SORRY
+ENDIF
+
+; --------------------------
+; *** Static Data 1 of 2 ***
+; --------------------------
+
+		SECTION	STATIC1
 
 ; Initial values RAM variables 
-; This table must exactly match with the VAR_RAM table below!
-VAR_START:	DW	KEYWDS
-		DW	KEYWDL
-		DW	CMDTAB
-		DW	FUNTBL
-		DW	bbxCOMDS
-		
+; This table must exactly match with the VAR1_RAM table below!
+
+VAR1_START:	; Tokens, keywords and jump tables
+		DW	KEYWDS		; BASIC Keywords token table
+		DW	KEYWDL		; BASIC Keywords table size
+		DW	CMDTAB		; BASIC Commands jump table
+		DW	FUNTBL		; BASIC Functions jump table 
+		DW	bbxCOMDS	; OS Commands keywords+jump table (sort ascending on keyword)
+
+		; Commands that can be redefined without having to duplicate the token tables:
+
+		; OS Commands
 		JP	BAS_OSRDCH
 		JP	bbxDspPrompt
 		JP	BAS_OSWRCH
@@ -549,6 +614,7 @@ VAR_START:	DW	KEYWDS
 		JP	BAS_LTRAP
 		JP	BAS_TRAP
 
+		; DOS Commands
 		JP	bbxDosOpen
 		JP	bbxDosShut
 		JP	bbxDosBget
@@ -560,9 +626,9 @@ VAR_START:	DW	KEYWDS
 		JP	bbxDosReset
 	 	JP	bbxDosCall
 
+		; BASIC Commands
 		JP	BAS_PLOT
 		JP	BAS_POINT
-
 		JP	bbxPsgEnvelope
 		JP	bbxDspMode
 		JP	bbxPsgSound
@@ -570,16 +636,21 @@ VAR_START:	DW	KEYWDS
 		JP	bbxGetDateTime
 		JP	bbxSetDateTime
 
-		DB	0		; FLAGS
-		DB	10		; TRPCNT
+		; Initialized BASIC Variables
+		DB	0		; FLAGS		Bit 0:exec 1:spool 2:print 3:edit 4:input 5:- 6:esc off 7:esc
+		DB	10		; TRPCNT	Counter used in trap/ltrap routine
 		DB	0		; INKEY
-VAR_END:
+		DW	0		; EDPTR
+
+VAR1_END:	; The main BBX80 module contains more static data
 
 ; ------------------------------------------------------------------
 ; *** BASIC pointers, vectors and variables that are initialized ***
 ; ------------------------------------------------------------------
 
-		SECTION	BBX80VAR
+		SECTION	BASICVAR
+
+		PUBLIC	VAR1_RAM
 
 		PUBLIC 	PT_KEYWDS
 		PUBLIC	PT_KEYWDL
@@ -626,54 +697,52 @@ VAR_END:
 		EXTERN	FUNTBL
 
 
-; This table must exactly match with the VAR_START to VAR_END table above!
-VAR_RAM:
+VAR1_RAM:
 
-PT_KEYWDS:	DW	KEYWDS		; BASIC Keywords token table
-PT_KEYWDL:	DW	KEYWDL		; BASIC Keywords table size
-PT_CMDTAB:	DW	CMDTAB		; BASIC Commands jump table
-PT_FUNTBL:	DW	FUNTBL		; BASIC Functions jump table 
-PT_COMDS:	DW	bbxCOMDS	; OS Commands keywords+jump table (sort ascending on keyword)
-
-
-; Commands that can be redefined in an add-on module without having to duplicate the token tables:
+PT_KEYWDS:	DS	2
+PT_KEYWDL:	DS	2
+PT_CMDTAB:	DS	2
+PT_FUNTBL:	DS	2
+PT_COMDS:	DS	2
 
 ; OS Comamnds
-OSRDCH:		JP	BAS_OSRDCH
-PROMPT:		JP	bbxDspPrompt
-OSWRCH:		JP	BAS_OSWRCH
-OSLINE:		JP	BAS_OSLINE
-OSSAVE:		JP	bbxHostSave
-OSLOAD:		JP	bbxHostLoad
-OSCLI:		JP	BAS_OSCLI
-OSKEY:		JP	BAS_OSKEY
-LTRAP:		JP	BAS_LTRAP
-TRAP:		JP	BAS_TRAP
+OSRDCH:		DS	3
+PROMPT:		DS	3
+OSWRCH:		DS	3
+OSLINE:		DS	3
+OSSAVE:		DS	3
+OSLOAD:		DS	3
+OSCLI:		DS	3
+OSKEY:		DS	3
+LTRAP:		DS	3
+TRAP:		DS	3
 
 ; DOS Commands
-OSOPEN:		JP	bbxDosOpen
-OSSHUT:		JP	bbxDosShut
-OSBGET:		JP	bbxDosBget
-OSBPUT:		JP	bbxDosBput
-OSSTAT:		JP	bbxDosStat
-GETEXT:		JP	bbxDosGetext
-GETPTR:		JP	bbxDosGetPtr
-PUTPTR:		JP	bbxDosPutPtr
-RESET:		JP	bbxDosReset
-OSCALL: 	JP	bbxDosCall
+OSOPEN:		DS	3
+OSSHUT:		DS	3
+OSBGET:		DS	3
+OSBPUT:		DS	3
+OSSTAT:		DS	3
+GETEXT:		DS	3
+GETPTR:		DS	3
+PUTPTR:		DS	3
+RESET:		DS	3
+OSCALL: 	DS	3
 
 ; BASIC Commands 
-PLOT:		JP	BAS_PLOT
-POINT:		JP	BAS_POINT
-ENVEL:		JP	bbxPsgEnvelope
-MODE:		JP	bbxDspMode
-SOUND:		JP	bbxPsgSound
-ADVAL:		JP	bbxAdval
-GETIMS:		JP	bbxGetDateTime
-PUTIMS: 	JP	bbxSetDateTime
+PLOT:		DS	3
+POINT:		DS	3
+ENVEL:		DS	3
+MODE:		DS	3
+SOUND:		DS	3
+ADVAL:		DS	3
+GETIMS:		DS	3
+PUTIMS: 	DS	3
 
 ; BASIC Variables
-FLAGS:		DB	0		; Bit 0:exec 1:spool 2:print 3:edit 4:input 5:- 6:esc off 7:esc
-TRPCNT:		DB	10		; Counter used in trap/ltrap routine
-INKEY:		DB	0
-EDPTR:		DW	0		; Edit pointer
+FLAGS:		DS	1
+TRPCNT:		DS	1		
+INKEY:		DS	1
+EDPTR:		DS	2
+
+; The main BBX80 module contains more initialized variables

@@ -1,41 +1,8 @@
 ; ------------------------------------------------------------------------------
-; BBX80 Include v1.0
+; BBX80 Console Include v1.0
 ;
-; Definitions used in BBX80 modules
+; Console definitions
 ; ------------------------------------------------------------------------------
-
-; Version
-DEFL BBXVERSION = "V1.0"
-
-IFDEF BBX80A
-DEFL BBXEDITION = "BBX80A VT100 Edition"
-ENDIF
-
-IFDEF BBX80B
-DEFL BBXEDITION = "BBX80B Basic Edition"
-ENDIF
-
-IFDEF BBX80C
-DEFL BBXEDITION = "BBX80C Advanced Edition"
-ENDIF
-
-IFDEF BBX80Z
-DEFL BBXEDITION = "BBX80Z Ultimate Edition"
-ENDIF
-
-; System settings
-COLUMNS:	EQU	80		; Screen width
-SPEED:		EQU	$2000		; Processor speed indicator ($2000 for Z180/20Mhz)
-
-; When at last column wait for line wrap until next char is printed unless in input mode
-; set for vt100 compatibility
-DEFINE WRAPWAIT
-
-; CP/M Definitions
-BDOS:		EQU	5
-FCB:		EQU	5CH
-DSKBUF:		EQU	80H
-FCBSIZ:		EQU	128+36+2
 
 ; ASCII Control Characters
 CUU:		EQU	$01		; Ctrl-A Cursor up

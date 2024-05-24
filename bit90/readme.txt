@@ -6,6 +6,8 @@ BIT90 Home computer.
 
 Changelog:
 ----------
+V1.3:
+- restructured codebase, no functional changes
 V1.2:
 - added *BLOAD command to load Coleco games from tape (for the ROM edition)
 V1.1: 

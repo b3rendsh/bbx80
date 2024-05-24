@@ -1,6 +1,6 @@
 ; ------------------------------------------------------------------------------
-; BBX80 BIT90 HOST v1.2
-; Copyright (C) 2023 H.J. Berends*
+; BBX80 BIT90 HOST v1.3
+; Copyright (C) 2024 H.J. Berends*
 ;
 ; You can freely use, distribute or modify this program.
 ; It is provided freely and "as it is" in the hope that it will be useful, 
@@ -10,9 +10,10 @@
 ; a few parts, with modifications. I consider it fair use of orphaned software.
 ; ------------------------------------------------------------------------------
 
-		INCLUDE	"BBX80.INC"
-
 		SECTION BIT90HOST
+
+		INCLUDE	"bbx80.inc"
+		INCLUDE	"console.inc"
 
 		PUBLIC	bbxHostInit
 		PUBLIC	bbxHostExit
@@ -22,15 +23,15 @@
 		PUBLIC	bbxGetKey
 
 		; bbx80
-		EXTERN	bbxNMIenable
-		EXTERN	bbxNMIdisable
+		EXTERN	bbxIRQenable
+		EXTERN	bbxIRQdisable
 		EXTERN	bbxShowDsp
 		EXTERN	bbxHideDsp
 		EXTERN	bbxSetVdpR1
 		EXTERN	dspCursor
 		EXTERN	dspStringA
-		EXTERN	bbxFLSCUR
-		EXTERN	bbxCAPSOFF
+		EXTERN	FLSCUR
+		EXTERN	CAPSOFF
 		EXTERN	bbxReleaseKey
 
 		; basic
@@ -84,7 +85,7 @@ POP_EXX:	EXX
 		EXX
 		RET
 
-TAPE_ERR:	RST	R_NMIstart
+TAPE_ERR:	RST	R_IRQstart
 		LD	A,202		; "Device fault"
 		CALL	EXTERR
 		DEFM	"Tape error"
@@ -129,11 +130,11 @@ LAB_1AFA:	LD	(LAB_709E),A		; 256-byte Block counter
 		RST	R_dspTell
 		DB	CR,LF,BELL,"*TAPE DUMP:"
 		DB	0
-		RST	R_NMIstop		; Tape I/O requires exact timing
+		RST	R_IRQstop		; Tape I/O requires exact timing
 		CALL	FUN_1D84		; display filename and calculate checksum
 		CALL	FUN_1B6C		; Write file header to tape
 		CALL	FUN_1BE4		; Write file data to tape
-		RST	R_NMIstart
+		RST	R_IRQstart
 LAB_1B26:	RST	R_dspTell
 		DB	CR,LF,"* END *",BELL
 		DB	0
@@ -347,10 +348,10 @@ LAB_1C68:	LD	A,$42			; Block: header id
 		RST	R_dspTell
 		DB	CR,LF,"*TAPE LOAD:",BELL
 		DB	0
-		RST	R_NMIstop		; Tape I/O requires exact timing
+		RST	R_IRQstop		; Tape I/O requires exact timing
 		CALL	FUN_1C8D		; Load and check header
 		CALL	FUN_1CF6		; Load data
-		RST	R_NMIstart
+		RST	R_IRQstart
 		JP	LAB_1B26		; Print 'end' and done
 
 
@@ -653,7 +654,7 @@ bbxHostInit:	; Sound off
 bbxGetKey:	PUSH	BC
 		PUSH	DE
 		PUSH	HL
-		LD	HL,bbxFLSCUR
+		LD	HL,FLSCUR
 		INC	(HL)
 		CALL	KEYSCAN_3405
 		LD	B,E
@@ -684,7 +685,7 @@ bbxGetKey:	PUSH	BC
 		CP	$25
 		JR	NZ,LAB_336F
 		XOR	A
-		LD	(bbxCAPSOFF),A
+		LD	(CAPSOFF),A
 		JR	LAB_337F
 
 LAB_336F:	CALL	LAB_3396
@@ -694,7 +695,7 @@ LAB_336F:	CALL	LAB_3396
 LAB_3376:	CP	$25
 		JR	NZ,LAB_3382
 		LD	A,$20
-		LD	(bbxCAPSOFF),A
+		LD	(CAPSOFF),A
 
 IFDEF BIT90
 LAB_337F:	AND	A			; Clear carry flag (inkey is $FF)
@@ -705,7 +706,7 @@ ENDIF
 
 LAB_3382:	CALL	LAB_3396
 		JR	NC,LAB_33D5
-		LD	HL,bbxCAPSOFF
+		LD	HL,CAPSOFF
 		OR	(HL)
 IFDEF BIT90
 		LD	HL,LAB_7017		; Graphics key characters not implemented
@@ -886,7 +887,7 @@ SCANCODES:	DB	$2D,$37,$33,$5C,$F5,$31,$35,$39
 
 		SECTION	BIT90VEC 
 
-		EXTERN	bbxNMIdisable
+		EXTERN	bbxIRQdisable
 
 ; ------------------------------------------------------------------------------
 ; BYE - Exit BASIC and reboot machine with banked Game ROM
@@ -897,7 +898,7 @@ SCANCODES:	DB	$2D,$37,$33,$5C,$F5,$31,$35,$39
 ; End for BBX80 Cartridge 16k edition.
 ; ------------------------------------------------------------------------------
 IFDEF BBX80CART
-bbxHostExit:	CALL	bbxNMIdisable
+bbxHostExit:	CALL	bbxIRQdisable
 		XOR	A			; Command "BYE" / exit BASIC
 		LD	($8000),A		; $8000 = Game rom identifier ($AA $55)
 		RST	$00
@@ -909,7 +910,7 @@ ENDIF
 IFDEF BBX80ROM
 		ORG	$3FF1
 
-bbxHostExit:	CALL	bbxNMIdisable
+bbxHostExit:	CALL	bbxIRQdisable
 		IN	A,(IOROM0)		; Switch Mem bank to Coleco ROM
 		RST	$00			; Reboot
 

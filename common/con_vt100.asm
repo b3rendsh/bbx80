@@ -1,61 +1,79 @@
 ; ------------------------------------------------------------------------------
 ; BBX80 Console v1.0
-; Copyright (C) 2023 H.J. Berends
+; Copyright (C) 2024 H.J. Berends
 ;
 ; You can freely use, distribute or modify this program.
 ; It is provided freely and "as it is" in the hope that it will be useful, 
 ; but without any warranty of any kind, either expressed or implied.
 ; ------------------------------------------------------------------------------
-; This module contains routines for the ANSI Terminal CP/M Edition.
-; Some code was inspired by other BBC BASIC implementations.
+; VT100 / ANSI terminal commands and subroutines.
+; CP/M functions are used for console input/output.
 ; ------------------------------------------------------------------------------
 
-		INCLUDE	"BBX80.INC"
-	
-		SECTION BBX80CON
+		SECTION BBX80LIB
 
+		INCLUDE	"bbx80.inc"
+		INCLUDE	"console.inc"
+
+		PUBLIC	initConsole
 		PUBLIC	bbxCls
 	        PUBLIC  bbxSetCursor
 		PUBLIC	bbxGetCursor
 		PUBLIC	bbxDspChar
-		PUBLIC	bbxDspPrompt
-		PUBLIC	bbxGetLine
 		PUBLIC	bbxSetColor
-		PUBLIC	bbxGetKey
-
-		PUBLIC	initConsole
+		PUBLIC	bbxDspPrompt
+		PUBLIC	dspTell
+		PUBLIC	dspCRLF
 		PUBLIC	dspStringA
 		PUBLIC	dspStringB
 		PUBLIC	dspString0
-		PUBLIC	dspTell
 
-		EXTERN	bbxNMIenable
-		EXTERN	bbxNMIdisable
+		PUBLIC	bbxGetLine
+		PUBLIC	bbxGetKey
 
 		EXTERN	OSRDCH
 		EXTERN	FLAGS
 
-		EXTERN	dosGetKey
 		EXTERN	dosOutChar
+		EXTERN	dosGetKey
+
+		EXTERN	CONWIDTH
+
+
+; -----------------------------------------------------
+; initConsole: Initialize console variables
+; -----------------------------------------------------
+initConsole:	CALL	dspEscape
+		DB	"[?7l",0		; No auto wrap around / scroll text
+		; Get screen width
+		LD	DE,$00FE		; Column 254
+		LD	H,D			; Line 0
+		LD	L,D
+		CALL	bbxSetCursor		; Set cursor to far right column
+		CALL	bbxGetCursor		; Get actual column
+		LD	A,E
+		INC	A
+		CP	8			; Test for minimum screen width
+		RET	C			; If lower then keep default value
+		LD	(CONWIDTH),A		; Save width
+		RET
 
 ; ------------------------------------------------------------------------------
-; Command: CLS / CLG
+; Command: CLS
 ; Clear screen and move cursor to pos 0,0
-; Destroys: A,D,E,H,L,F
 ; ------------------------------------------------------------------------------
 bbxCls:		CALL	dspEscape
 		DB	"[H",0		; Home
 		CALL	dspEscape
 		DB	"[2J",0		; Clear Screen
 		LD	DE,$0000	; curpos 0,0
-		LD	(bbxCURPOS),DE
+		LD	(CURPOS),DE
 		RET
 
 ; -------------------------------------------
 ; PUTCSR - Move cursor to specified position.
 ;   Inputs: DE = horizontal position (LHS=0)
 ;           HL = vertical position (TOP=0)
-; Destroys: A,D,E,H,L,F
 ; -------------------------------------------
 bbxSetCursor:	PUSH	BC
 		LD	A,ESC
@@ -63,26 +81,24 @@ bbxSetCursor:	PUSH	BC
 		LD	A,'['
 		CALL	screenWrite
 		LD	A,L
-		LD	(bbxCURPOSY),A
+		LD	(CURPOSY),A
 		INC	A			; BASIC curpos starts at 0 and VT100 at 1
 		CALL	dspNumA
 		LD	A,';'
 		CALL	screenWrite
 		LD	A,E
-		LD	(bbxCURPOSX),A
+		LD	(CURPOSX),A
 		INC	A			; "
 		CALL	dspNumA
 		LD	A,'H'
 		CALL	screenWrite
 		POP	BC
-
 		RET
 
 ; -------------------------------------------
 ; GETCSR - Return cursor coordinates.
 ;  Outputs:  DE = X coordinate (POS)
 ;            HL = Y coordinate (VPOS)
-; Destroys: A,D,E,H,L,F
 ; -------------------------------------------
 bbxGetCursor:	PUSH	BC
 		CALL	dspEscape
@@ -140,31 +156,192 @@ getCurPos:	CALL	getNextCode
 		RET	C
 		JR	getCurPos
 
-; -----------------------------------------------------
-; initConsole: Initialize console
-; The VDP should be initialized first by the OS
-; -----------------------------------------------------
-initConsole:	; Init variables
-		LD	HL,V80_START		; Source
-		LD	DE,V80_RAM		; Destination
-		LD	BC,V80_END-V80_START	; Number of bytes to copy (calculated by assembler)
-		LDIR				; Copy initial variable values to RAM
 
-		; Init screen
-		CALL	dspEscape
-		DB	"[?7l",0		; No auto wrap around / scroll text
-		; Get screen width
-		LD	DE,$00FE		; Column 254
-		LD	H,D			; Line 0
-		LD	L,D
-		CALL	bbxSetCursor		; Set cursor to far right column
-		CALL	bbxGetCursor		; Get actual column
-		LD	A,E
-		INC	A
-		CP	8			; Test for minimum screen width
-		JR	C,_endColumn		; Keep default value
-		LD	(bbxWIDTH),A		; Save width
-_endColumn:	CALL	bbxCls
+; -----------------------------------------------------------------------
+; Subroutine: Display an ASCII character on the console
+; Includes cursor position update / scrolling
+; -----------------------------------------------------------------------
+bbxDspChar:	PUSH	HL
+		PUSH	AF
+		PUSH	BC
+		LD	HL,CURPOS
+		CP	BS			; Cursor left?
+		JR	Z,dspBS
+		CP	CR			; Enter?
+		JR	Z,dspCR
+		CP	' '			; Other control character?
+		JR	C,screenWrite1
+IFDEF WRAPWAIT
+		LD	B,A			; Save char
+		LD	A,(FLAGS)
+		BIT	4,A			; Input mode?
+		JR	NZ,_inputMode
+		LD	A,(CONWIDTH)
+		DEC	A
+		CP	(HL)			; Compare X position
+		CALL	C,dspCRLF
+		LD	A,B			; Restore char
+		CALL	screenWrite
+		INC	(HL)
+		JR	endWrite		
+_inputMode:	LD	A,B
+ENDIF
+		CALL	screenWrite
+		INC	(HL)			; Increase X position
+		LD	A,(CONWIDTH)	
+		CP	(HL)			; Compare X position
+		CALL	Z,dspCRLF
+		JR	endWrite
+
+dspBS:		XOR	A
+		CP	(HL)
+		JR	Z,_reverseWrap
+		DEC	(HL)
+		LD	A,BS
+		JR	screenWrite1
+
+_reverseWrap:	LD	A,(CONWIDTH)
+		DEC	A
+		LD	B,A			; Save width-1
+		LD	(HL),A
+		LD	A,ESC			; Cursor up
+		CALL	screenWrite
+		LD	A,'M'
+		CALL	screenWrite
+		LD	A,ESC			; Cursor right width-1 times
+		CALL	screenWrite
+		LD	A,'['
+		CALL	screenWrite
+		LD	A,B			; HL = Width-1
+		CALL	dspNumA
+		LD	A,'C'
+		JR	screenWrite1
+
+dspCR:		LD	(HL),0
+		JR	screenWrite1
+
+; -------------------------------------------------------------------------
+; Subroutine: write character to the screen and move cursor 1 right.
+; -------------------------------------------------------------------------
+screenWrite:	PUSH	HL
+		PUSH	AF
+		PUSH	BC
+screenWrite1:	PUSH	DE
+		CALL	dosOutChar
+		POP	DE
+endWrite:	POP	BC
+		POP	AF
+		POP	HL
+		RET
+
+; ------------------------------------------------------------------------------
+; Subroutine: Set text color
+; ------------------------------------------------------------------------------
+bbxSetColor:	PUSH	BC
+		LD	A,L
+		AND	7
+		BIT	7,L
+		JP	Z,FGCLR
+		ADD	10
+FGCLR:  	ADD	30
+		BIT	3,L
+		JP	Z,OUTCLR
+		ADD	60
+OUTCLR:		LD	L,A
+		LD	A,ESC
+		CALL	screenWrite
+		LD	A,'['
+		CALL	screenWrite
+		LD	A,L
+		CALL	dspNumA
+		LD	A,'m'
+		CALL	screenWrite
+		POP	BC
+		RET
+
+; ------------------------------------------------------------------------------
+; Subroutine: Display prompt, always start on a new line
+; ------------------------------------------------------------------------------
+bbxDspPrompt:	LD	A,(CURPOSX)
+		AND	A
+		JR	Z,_pos0
+		CALL	dspCRLF
+_pos0:		LD	A,'>'
+		JP	bbxDspChar
+
+; ------------------------------------------------------------------------------
+; Subroutine: tell message (as in BBC BASIC TELL routine) 
+; ------------------------------------------------------------------------------
+dspTell:	EX	(SP),HL		; Get return address
+		CALL	dspString0
+		EX	(SP),HL
+		RET
+
+; ------------------------------------------------------------------------------
+; Subroutine: Move cursor to start of next line
+; ------------------------------------------------------------------------------
+dspCRLF:	LD	A,CR
+		CALL	bbxDspChar
+		LD	A,LF
+		JP	bbxDspChar
+
+; ------------------------------------------------------------------------------
+; Subroutine: display string
+; Parameters: HL = address
+; dspStringA - start with length
+; dspStringB - length in register B
+; dspString0 - string terminated by 0
+; ------------------------------------------------------------------------------
+dspStringA:	LD	A,(HL)
+		LD	B,A
+		AND	A		; Length = 0 ?
+		RET	Z
+		INC	HL
+dspStringB:	LD	A,(HL)
+		CALL	bbxDspChar
+		INC	HL
+		DJNZ	dspStringB
+		RET
+
+dspString0:	LD	A,(HL)
+		INC	HL
+		OR	A
+		RET	Z
+		CALL	bbxDspChar
+		JR	dspString0
+
+; ---------------------------------------------------------------------------
+; dspNumA - routine to display a value in A in ascii characters
+; N.B. similar to PBCDL routine but 8 bit and direct screen write
+; ---------------------------------------------------------------------------
+dspNumA:	LD	L,A
+		LD	H,0
+		LD	BC,-100
+		CALL	num1
+		LD	BC,-10
+		CALL	num1
+		LD	C,-01
+num1:		LD	A,'0'-1
+num2:		INC	A
+		ADD	HL,BC
+		JR	C,num2
+		SBC	HL,BC
+		CALL	screenWrite
+		RET
+
+; ------------------------------------------------------------------------------
+; Subroutine: display escape code
+; ------------------------------------------------------------------------------
+dspEscape:	EX	(SP),HL
+		LD	A,ESC
+		CALL	screenWrite
+escCode:	LD	A,(HL)
+		INC	HL
+		OR	A
+		JR	Z,escEnd
+		CALL	screenWrite
+		JR	escCode
+escEnd:		EX	(SP),HL
 		RET
 
 ; ------------------------------------------------------------------------------
@@ -188,6 +365,7 @@ IFDEF WRAPWAIT
 		OR	00010000B		; Set input flag
 		LD	(FLAGS),A
 ENDIF
+		CALL	bbxHideCursor
 		LD	A,L
 		LD	L,0
 		LD	C,L			; Set repeat flag
@@ -233,24 +411,19 @@ IFDEF WRAPWAIT
 		AND	11101111B		; Reset input flag
 		LD	(FLAGS),A
 ENDIF
+		CALL	bbxShowCursor
 		LD	A,C			; CR or ESC
 		RET
 
 ; ------------------------------------------------------------------------------
 ; Wait for key press and handle repeat delay / key sound
 ; ------------------------------------------------------------------------------
-keyWait:	LD	A,(bbxWIDTH)		; Set repeat to screen width
+keyWait:	CALL	bbxShowCursor
+		LD	A,(CONWIDTH)		; Set repeat to screen width
 		LD	B,A
 		CALL	OSRDCH			; wait for a key to be pressed
 		LD	C,A
-
-		; key sound
-		LD	A,(bbxKEYS)
-		OR	A
-		JR	Z,_endKeySound
-		NOP				; insert key sound here
-_endKeySound:	LD	A,C			; restore saved key value
-		RET
+		JP	bbxHideCursor
 
 ; -------------------------------------------
 ; Subroutine: process key pressed on keyboard
@@ -357,193 +530,6 @@ togglePrint:	LD	A,(FLAGS)		; Toggle echo to printer
 		LD	(FLAGS),A
 		RET
 
-; -----------------------------------------------------------------------
-; Subroutine: Display an ASCII character on the console
-; Includes cursor position update / scrolling
-; -----------------------------------------------------------------------
-bbxDspChar:	PUSH	HL
-		PUSH	AF
-		PUSH	BC
-		LD	HL,bbxCURPOS
-		CP	BS			; Cursor left?
-		JR	Z,dspBS
-		CP	CR			; Enter?
-		JR	Z,dspCR
-		CP	' '			; Other control character?
-		JR	C,screenWrite1
-IFDEF WRAPWAIT
-		LD	B,A			; Save char
-		LD	A,(FLAGS)
-		BIT	4,A			; Input mode?
-		JR	NZ,_inputMode
-		LD	A,(bbxWIDTH)
-		DEC	A
-		CP	(HL)			; Compare X position
-		CALL	C,dspCRLF
-		LD	A,B			; Restore char
-		CALL	screenWrite
-		INC	(HL)
-		JR	endWrite		
-_inputMode:	LD	A,B
-ENDIF
-		CALL	screenWrite
-		INC	(HL)			; Increase X position
-		LD	A,(bbxWIDTH)	
-		CP	(HL)			; Compare X position
-		CALL	Z,dspCRLF
-		JR	endWrite
-
-dspBS:		XOR	A
-		CP	(HL)
-		JR	Z,_reverseWrap
-		DEC	(HL)
-		LD	A,BS
-		JR	screenWrite1
-
-_reverseWrap:	LD	A,(bbxWIDTH)
-		DEC	A
-		LD	B,A			; Save width-1
-		LD	(HL),A
-		LD	A,ESC			; Cursor up
-		CALL	screenWrite
-		LD	A,'M'
-		CALL	screenWrite
-		LD	A,ESC			; Cursor right width-1 times
-		CALL	screenWrite
-		LD	A,'['
-		CALL	screenWrite
-		LD	A,B			; HL = Width-1
-		CALL	dspNumA
-		LD	A,'C'
-		JR	screenWrite1
-
-dspCR:		LD	(HL),0
-		JR	screenWrite1
-
-; -------------------------------------------------------------------------
-; Subroutine: write character to the screen and move cursor 1 right.
-; -------------------------------------------------------------------------
-screenWrite:	PUSH	HL
-		PUSH	AF
-		PUSH	BC
-screenWrite1:	PUSH	DE
-		CALL	dosOutChar
-		POP	DE
-endWrite:	POP	BC
-		POP	AF
-		POP	HL
-		RET
-
-; ------------------------------------------------------------------------------
-; Subroutine: Move cursor to start of next line
-; ------------------------------------------------------------------------------
-dspCRLF:	LD	A,CR
-		CALL	bbxDspChar
-		LD	A,LF
-		CALL	bbxDspChar
-		RET
-
-; ------------------------------------------------------------------------------
-; Subroutine: Display prompt, always start on a new line
-; ------------------------------------------------------------------------------
-bbxDspPrompt:	LD	A,(bbxCURPOSX)
-		AND	A
-		JR	Z,_pos0
-		CALL	dspCRLF
-_pos0:		LD	A,'>'
-		JP	bbxDspChar
-
-; ------------------------------------------------------------------------------
-; Subroutine: display string
-; Parameters: HL = address
-; dspStringA - start with length
-; dspStringB - length in register B
-; dspString0 - string terminated by 0
-; ------------------------------------------------------------------------------
-dspStringA:	LD	A,(HL)
-		LD	B,A
-		AND	A		; Length = 0 ?
-		RET	Z
-		INC	HL
-dspStringB:	LD	A,(HL)
-		CALL	bbxDspChar
-		INC	HL
-		DJNZ	dspStringB
-		RET
-
-dspString0:	LD	A,(HL)
-		INC	HL
-		OR	A
-		RET	Z
-		CALL	bbxDspChar
-		JR	dspString0
-
-; ---------------------------------------------------------------------------
-; dspNumA - routine to display a value in A in ascii characters
-; N.B. similar to PBCDL routine but 8 bit and direct screen write
-; ---------------------------------------------------------------------------
-dspNumA:	LD	L,A
-		LD	H,0
-		LD	BC,-100
-		CALL	num1
-		LD	BC,-10
-		CALL	num1
-		LD	C,-01
-num1:		LD	A,'0'-1
-num2:		INC	A
-		ADD	HL,BC
-		JR	C,num2
-		SBC	HL,BC
-		CALL	screenWrite
-		RET
-
-; ------------------------------------------------------------------------------
-; Subroutine: tell message (as in BBC BASIC TELL routine) 
-; ------------------------------------------------------------------------------
-dspTell:	EX	(SP),HL		; Get return address
-		CALL	dspString0
-		EX	(SP),HL
-		RET
-
-; ------------------------------------------------------------------------------
-; Subroutine: display escape code
-; ------------------------------------------------------------------------------
-dspEscape:	EX	(SP),HL
-		LD	A,ESC
-		CALL	screenWrite
-escCode:	LD	A,(HL)
-		INC	HL
-		OR	A
-		JR	Z,escEnd
-		CALL	screenWrite
-		JR	escCode
-escEnd:		EX	(SP),HL
-		RET
-; ------------------------------------------------------------------------------
-; Subroutine: Set text color
-; ------------------------------------------------------------------------------
-bbxSetColor:	PUSH	BC
-		LD	A,L
-		AND	7
-		BIT	7,L
-		JP	Z,FGCLR
-		ADD	10
-FGCLR:  	ADD	30
-		BIT	3,L
-		JP	Z,OUTCLR
-		ADD	60
-OUTCLR:		LD	L,A
-		LD	A,ESC
-		CALL	screenWrite
-		LD	A,'['
-		CALL	screenWrite
-		LD	A,L
-		CALL	dspNumA
-		LD	A,'m'
-		CALL	screenWrite
-		POP	BC
-		RET
-
 ; ------------------------------------------------------------------------------
 ; Subroutine: Direct console I/O
 ; Return a key (char) without echoing if one is waiting; zero if none available.
@@ -591,11 +577,11 @@ codeInsert:	LD	A,INS
 codeDelete:	LD	A,DEL
 		JR	_keyEnd
 codeEnd:	LD	A,KEND
-_keyEnd:	LD	(bbxKEYSAV),A
+_keyEnd:	LD	(KEYSAV),A
 		CALL	getKeyWait
 		CP	'~'
 		JR	NZ,_endEsc
-		LD	A,(bbxKEYSAV)
+		LD	A,(KEYSAV)
 		RET
 
 getKeyWait:	LD	HL,SPEED	; Wait time (< 0.3sec)
@@ -610,53 +596,28 @@ _keyWait:	PUSH	HL
 		DEC	HL
 		JR	_keyWait
 
-; -------------------
-; *** Static Data ***
-; -------------------
-
-; Initial values RAM variables 
-; This table must exactly match with the V80_RAM table below!
-
-V80_START:	DB	$C9,$00,$00	; bbxNMIUSR
-		DB	0		; bbxNMIFLAG
-		DB	0		; bbxNMICOUNT
-		DW	0,0		; bbxSECONDS
-		DB	$FF		; bbxBUFLEN
-		DB	COLUMNS		; bbxWIDTH
-		DB	$F0		; bbxTXTCOLOR
-		DB	0		; bbxINVCHAR
-		DB	1		; bbxKEYS
-V80_END:
-
-; -------------------------------------------
-; *** RAM for initialized BBX80 variables *** 
-; -------------------------------------------
-
-		SECTION	BBX80VAR
-
-		PUBLIC	bbxNMIUSR
-		PUBLIC	bbxNMIFLAG
-		PUBLIC	bbxNMICOUNT
-		PUBLIC	bbxSECONDS
-		PUBLIC	bbxBUFLEN
-		PUBLIC	bbxTXTCOLOR
-		PUBLIC	bbxINVCHAR
-		PUBLIC	bbxKEYS
-
-V80_RAM:
-
-; NMI variables
-bbxNMIUSR:	DB	$C9,$00,$00	; NMI interrupt routine extension (executed at end of Vsync routine)
-bbxNMIFLAG:	DB	0		; NMI Flag
-bbxNMICOUNT:	DB	0		; NMI Counter
-bbxSECONDS:	DW	0,0		; Elapsed seconds since boot (approx.)
-
-; Variables for console i/o
-bbxBUFLEN:	DB	$FF		; Set input buffer length to max 255 (Byte 256 reserved for CR)
-bbxWIDTH:	DB	COLUMNS		; Screen width
-bbxTXTCOLOR:	DB	$F0		; Text color ($F0 is white on transparant)
-bbxINVCHAR:	DB	0		; Inverse character (inverse color)
-bbxKEYS:	DB	1		; Keyboard click sound on or off
+; ------------------------------------------------------------------------------
+; Subroutine: Hide / Show Cursor (VT510)
+; ------------------------------------------------------------------------------
+IFDEF VT510
+bbxHideCursor:	PUSH	AF
+		PUSH	HL
+		CALL	dspEscape
+		DB	"[?25l",0	; Hide cursor
+		POP	HL
+		POP	AF
+		RET
+bbxShowCursor:	PUSH	AF
+		PUSH	HL
+		CALL	dspEscape
+		DB	"[?25h",0	; Show cursor
+		POP	HL
+		POP	AF
+		RET
+ELSE
+bbxHideCursor:	EQU	STUB
+bbxShowCursor:	EQU	STUB
+ENDIF
 
 ; -------------------------------
 ; *** RAM for BBX80 variables ***
@@ -664,10 +625,8 @@ bbxKEYS:	DB	1		; Keyboard click sound on or off
 		
 		SECTION BBX80RAM
 
-; Variables for console i/o
-bbxCURPOS:	DW	0		; Cursor position X,Y (Y is not used)
-bbxKEYSAV:	DB	0		; Save escape code
+CURPOS:		DS	2		; Cursor position X,Y (Y is not used)
+KEYSAV:		DS	1		; Save escape code
 
-; Constants
-bbxCURPOSX:	EQU	bbxCURPOS+0
-bbxCURPOSY:	EQU	bbxCURPOS+1
+CURPOSX:	EQU	CURPOS+0
+CURPOSY:	EQU	CURPOS+1

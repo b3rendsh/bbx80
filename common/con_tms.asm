@@ -1,57 +1,52 @@
 ; ------------------------------------------------------------------------------
-; BBX80 Console v1.3
+; BBX80 CON_TMS9918A Console v1.0
 ; Copyright (C) 2024 H.J. Berends
 ;
 ; You can freely use, distribute or modify this program.
 ; It is provided freely and "as it is" in the hope that it will be useful, 
 ; but without any warranty of any kind, either expressed or implied.
 ; ------------------------------------------------------------------------------
+; TMS9918A hardware dependent console output commands and subroutines.
+; ------------------------------------------------------------------------------
 
-		SECTION BBX80CON
+		SECTION BBX80LIB
 
 		INCLUDE	"bbx80.inc"
-		INCLUDE	"console.inc"
-	
+		INCLUDE "console.inc"
+
 		PUBLIC	bbxCls
 	        PUBLIC  bbxSetCursor
 		PUBLIC	bbxGetCursor
 		PUBLIC	bbxDspChar
-		PUBLIC	bbxDspPrompt
-		PUBLIC	bbxGetLine
-		PUBLIC	bbxKeysOn
-		PUBLIC	bbxKeysOff
-		PUBLIC	bbxReleaseKey
 		PUBLIC	bbxSetColor
+		PUBLIC	bbxDspPrompt
 
-		PUBLIC	initConsole
-		PUBLIC	dspCursor
 		PUBLIC	dspCRLF
 		PUBLIC	dspStringA
 		PUBLIC	dspStringB
 		PUBLIC	dspString0
 		PUBLIC	dspTell
 
-		EXTERN	bbxShowDsp
-		EXTERN	bbxHideDsp
-		EXTERN	bbxIRQenable
-		EXTERN	bbxIRQdisable
+		PUBLIC	dspCursor
+
+		EXTERN	bbxIRQstart
+		EXTERN	bbxIRQstop
+		EXTERN	bbxBell
+		EXTERN	bbxSetGfxColor
+		EXTERN	vdpWriteBlock
+		EXTERN	vdpWriteByte
+
 		EXTERN	MAXLIN
 		EXTERN	TXTCOLOR
-		EXTERN	CONKEYS
 		EXTERN	INVCHAR
-
-		EXTERN	bbxSetGfxColor
-		EXTERN	vdpWriteByte
-		EXTERN	vdpWriteBlock
-
-		EXTERN	OSKEY
-		EXTERN	FLAGS
+		EXTERN	VDPBUF
 
 ; ------------------------------------------------------------------------------
-; Command: CLS / CLG
-; Clear screen (excluding lines starting at MAXLIN) and move cursor to pos 0,0
+; Command: CLS
+; Clear screen and move cursor to pos 0,0
+; Lines starting at MAXLIN (e.g. statusline) are not cleared
 ; ------------------------------------------------------------------------------
-bbxCls:		RST	R_IRQstop
+bbxCls:		CALL	bbxIRQstop
 		LD	A,(MAXLIN)
 		LD	B,A
 		XOR	A			; A=0 clear all patterns
@@ -63,8 +58,7 @@ bbxCls:		RST	R_IRQstop
 		LD	A,(TXTCOLOR)		; Set all pixel colors to default color
 		LD	D,$20			; Color table offset
 		CALL	vdpWriteBlock
-		RST	R_IRQstart
-		RET
+		JP	bbxIRQstart
 
 ; -------------------------------------------
 ; PUTCSR - Move cursor to specified position.
@@ -95,264 +89,9 @@ bbxGetCursor:	LD	DE,(CURPOS)	; D=Y and E=X
 		LD	D,H		; DE = X
 		RET
 
-; -----------------------------------------------------
-; initConsole: Initialize console
-; The VDP should be initialized first by the OS
-; -----------------------------------------------------
-initConsole:	; Init screen
-		CALL	bbxHideDsp
-		LD	BC,$0300		; Set counter
-		LD	HL,$1800		; Start address nametable
-_writeNT:	LD	A,L
-		CALL	vdpWriteByte
-		CPI				; Write Nametable with 3x 0..FF
-		JP	PE,_writeNT
-		CALL	bbxCls
-		JP	bbxShowDsp
-
-; ------------------------------------------------------------------------------
-; Subroutine: Input a line on the console, terminated by CR
-; Parameters: HL = pointer to text buffer (L > 0 is edit line)
-; Returns:    A = CR or something else if ESC is pressed
-; Init state: Auto wrap / scroll is turned off, max line length is 255
-; (partly based on original OSLINE routine)
-; ------------------------------------------------------------------------------
-; HL = pointer to text bufer
-; L = relative cursor / buffer position
-; A = character
-; B = repeat counter
-; C = repeat flag / char
-; All cursor positioning is forward/backward 1 character (with repeat B)
-; Last position in line contains CR
-; ------------------------------------------------------------------------------
-bbxGetLine:	LD	A,L
-		LD	L,0
-		LD	C,L			; Set repeat flag
-		CP	L
-		JR	Z,_repeatKey		; Buffer is empty
-updateDsp:	LD	B,0			; Update screen
-_update1:	LD	A,(HL)
-		INC	B
-		INC	HL
-		CP	CR
-		CALL	NZ,bbxDspChar
-		JR	NZ,_update1
-		LD	A,' '			; Char at curpos is a space
-		RST	R_dspChar
-		LD	A,BS			; Cursor left
-_update2:	RST	R_dspChar		; Repeat char write B times
-		DEC	HL
-		DJNZ	_update2
-_repeatKey:	LD	A,C
-		DEC	B
-		JR	Z,_limit
-		OR	A			; Repeat key?
-_limit:		CALL	Z,keyWait		; Wait for keyboard key pressed
-		LD	C,A			; Save for repeat
-		LD	A,(FLAGS)
-		OR	A			; Test for escape
-		LD	A,C
-		JP	M,endLine		; Escape?
-		CP	CR
-		JR	Z,endLine		; Enter?
-		OR	A
-		CALL	NZ,keyPressed
-		JR	_repeatKey
-
-endLine:	CALL	bbxReleaseKey
-_writeLine:	LD	A,(HL)
-		RST	R_dspChar		; Write rest of line
-		INC	HL
-		SUB	CR
-		JR	NZ,_writeLine
-		RST	R_dspCRLF
-		LD	A,C			; Load last pressed key (CR or ESC)
-		RET
-
-; ------------------------------------------------------------------------------
-; Wait for key press and handle repeat delay / key sound
-; ------------------------------------------------------------------------------
-keyWait:	LD	B,COLUMNS		; Set repeat to screen width
-		PUSH	BC
-		PUSH	HL
-		LD	BC,(LASTKEY)
-		OR	A			; Clear carry flag
-		SBC	HL,HL			; HL=0
-_repeatWait:	CALL	OSKEY			; Get keyboard key pressed
-		JR	C,_validateKey
-		LD	B,$60			; set time to wait for repeat
-		LD	C,$00			; no key pressed
-		CALL	dspCursor
-		JR	_repeatWait
-
-_validateKey:	CP	C
-		JR	NZ,_endKey
-		DJNZ	_repeatWait		; delay repeat key
-		LD	B,$04			; set repeat speed
-		LD	HL,FLSCUR
-		SET	6,(HL)			; show cursor during repeat
-		CALL	dspCursor
-
-_endKey:	LD	C,A
-		LD	(LASTKEY),BC		; save key / repeat counter
-
-		; key sound
-		LD	A,(CONKEYS)
-		OR	A
-		JR	Z,_endKeySound
-		LD	A,$87			; key pressed sound
-		OUT	(IOPSG0),A
-		LD	A,$02
-		OUT	(IOPSG0),A
-		LD	A,$93
-		OUT	(IOPSG0),A
-		LD	HL,$1000
-_repeatSound:	DEC	HL
-		LD	A,H
-		OR	L
-		JR	NZ,_repeatSound
-		LD	A,$9F
-		OUT	(IOPSG0),A
-_endKeySound:	LD	A,C			; restore saved key value
-		POP	HL
-		POP	BC
-		RET
-
-
-; -------------------------------------------
-; Subroutine: process key pressed on keyboard
-; -------------------------------------------
-keyPressed:	PUSH	HL
-		CALL	keyConversion
-		POP	HL
-		CP	$20			; Control character?
-		JR	C,keyControl
-		CP	$80			; Ascii character?
-		RET	NC
-		LD	C,0			; Inhibit repeat
-keyAscii:	LD	D,(HL)			; Printing Character
-		LD	(HL),A
-		INC	L
-		JR	Z,wontGo		; Line to long
-		RST	R_dspChar
-		LD	A,CR
-		CP	D			; Last char in buffer?
-		RET	NZ
-		LD	(HL),A
-		RET
-
-keyControl:	CP	CUU			; Cursor up
-		JR	Z,keyLeft
-		CP	CUD			; Cursor down
-		JR	Z,keyRight
-		LD	B,0			; Set Repeat to max 256
-		CP	ERALEFT
-		JR	Z,keyBS
-		CP	ERARIGHT
-		JR	Z,keyDelete
-		CP	KHOME
-		JR	Z,keyLeft
-		CP	KEND
-		JR	Z,keyRight
-		LD	C,0			; Inhibit repeat
-		CP	BS
-		JR	Z,keyBS
-		CP	CUB
-		JR	Z,keyLeft
-		CP	CUF
-		JR	Z,keyRight
-		CP	DEL
-		JR	Z,keyDelete
-		CP	INS
-		JR	Z,keyInsert
-		RET				; Unsupported key
-
-keyRight:	LD	A,(HL)
-		CP	CR
-		JR	Z,stopRepeat
-		JR	keyAscii
-
-keyBS:		SCF				; BS = cursor left + delete
-keyLeft:	INC	L
-		DEC	L
-		JR	Z,stopRepeat
-		LD	A,BS
-		PUSH	AF			; Save Carry flag value
-		RST	R_dspChar
-		POP	AF
-		DEC	L
-		RET 	NC
-keyDelete:	LD	A,(HL)
-		CP	CR
-		JR	Z,stopRepeat
-		LD	D,H
-		LD	E,L
-_delete1:	INC	DE
-		LD	A,(DE)
-		DEC	DE
-		LD	(DE),A
-		INC	DE
-		CP	CR
-		JR	NZ,_delete1
-endDelete:	POP	DE			; Ditch return address
-		JP	updateDsp
-
-keyInsert:	LD	A,CR	
-		CP	(HL)
-		RET	Z
-		LD	D,H
-		LD	E,254
-_insert1:	INC	DE
-		LD	(DE),A
-		DEC	DE
-		LD	A,E
-		CP	L
-		DEC	DE
-		LD	A,(DE)
-		JR	NZ,_insert1
-		LD	(HL),' '
-		JR	endDelete
-
-wontGo:		DEC	L
-		LD	(HL),CR
-		LD	A,BELL
-		RST	R_dspChar		; BEEP!
-stopRepeat:	LD	C,0			; Stop repeat
-		RET
-
-; -----------------------------------------------------------------------
-; Subroutine: Convert proprietary keycodes to standard code
-; -----------------------------------------------------------------------
-
-keyConversion:	LD	HL,CONVTAB
-_repeatConv:	CP	(HL)
-		JR	Z,_convertKey
-		INC	HL
-		INC	HL
-		JR	NC,_repeatConv
-		RET
-_convertKey:	INC	HL
-		LD	A,(HL)
-		RET
-
-; -----------------------------------------------------------------------
-; Subroutine: Hide cursor and wait until all keys are released
-; -----------------------------------------------------------------------
-bbxReleaseKey:	PUSH	AF
-		PUSH	HL
-		LD	HL,FLSCUR
-		RES	6,(HL)
-		CALL	dspCursor
-_releaseKey:	OR	A			; Clear carry flag
-		SBC	HL,HL			; HL=0
-		CALL	OSKEY			; Wait until all keys are released
-		JR	C,_releaseKey
-		POP	HL
-		POP	AF
-		RET
-
 ; -----------------------------------------------------------------------
 ; Subroutine: Display an ASCII character on the console
+; Includes cursor position update / scrolling
 ; -----------------------------------------------------------------------
 bbxDspChar:	PUSH	BC
 		PUSH	DE
@@ -363,38 +102,26 @@ bbxDspChar:	PUSH	BC
 		LD	DE,(CURPOS)
 
 		CP	BELL
-		JR	Z,charBell
+		JP	Z,bbxBell
 		CP	BS
 		JR	Z,charLeft
 		CP	LF
 		JR	Z,charDown
 		CP	CR
 		JR	Z,charEnter
+		CP	$20
+		JR	C,endControl
 		CP	$80			; Ascii character?
-		JR	C,screenWrite
-		POP	DE			; Ditch return address
+		JP	C,screenWrite
+endControl:	POP	DE			; Ditch return address
+		JR	endChar2
 
 endChar:	CALL	scroll
 		LD	(CURPOS),DE
-		POP	AF
+endChar2:	POP	AF
 		POP	HL
 		POP	DE
 		POP	BC
-		RET
-
-charBell:	LD	A,$87
-		OUT	(IOPSG0),A
-		LD	A,$03
-		OUT	(IOPSG0),A
-		LD	A,$90
-		OUT	(IOPSG0),A
-		LD	HL,$7000
-_repeatBell:	DEC	HL
-		LD	A,H
-		OR	L
-		JR	NZ,_repeatBell
-		LD	A,$9F
-		OUT	(IOPSG0),A
 		RET
 
 charLeft:	LD	A,D
@@ -413,18 +140,6 @@ charDown:	INC	D
 
 charEnter:	LD	E,$00
 		RET	
-
-; -------------------------------------------------------------------------
-; Subroutine: set keyboard click sound on or off
-; -------------------------------------------------------------------------
-bbxKeysOff:	PUSH	AF
-		XOR	A
-		JR	_setKeys
-bbxKeysOn:	PUSH	AF
-		LD	A,1
-_setKeys:	LD	(CONKEYS),A
-		POP	AF
-		RET
 
 ; -------------------------------------------------------------------------
 ; Subroutine: write character to the screen and move cursor 1 right.
@@ -476,7 +191,7 @@ _shiftLeft:	ADD	HL,HL
 ; C  = Bitpattern offset to the left
 
 		PUSH	HL
-		RST	R_IRQstop
+		CALL	bbxIRQstop
 
 
 ; Load 16 bytes from VDP in VBPBUF starting at address in HL
@@ -574,7 +289,7 @@ _repeatCharCol:	OUT	(C),A
 		DJNZ	_repeatCharCol
 ; end ---------------------------------------------------------------------------
 
-_endCharCol:	RST	R_IRQstart
+_endCharCol:	CALL	bbxIRQstart
 		POP	IY
 		POP	IX
 		POP	HL
@@ -589,6 +304,89 @@ _endCharCol:	RST	R_IRQstart
 		LD	E,$00
 		RET
 
+; --------------------------------------
+; Subroutine: scroll screen up if needed
+; --------------------------------------
+scroll:		LD	A,(MAXLIN)
+		DEC	A
+		CP	D
+		RET	NC			; No (further) scrolling needed
+		PUSH	BC
+		PUSH	DE
+		PUSH	HL
+		LD	D,A			; Save last line i.e. number of lines to scroll
+		LD	HL,$0100		; Source=line 1, Destination line 0
+_repeatScroll:	CALL	vdpCopyLine
+		INC	H
+		INC	L
+		DEC	D			; Row counter
+		JR	NZ, _repeatScroll
+		DEC	H
+		LD	A,H
+		CALL	vdpClearLine
+		POP	HL
+		POP	DE
+		POP	BC
+		DEC	D			; cusor position Y -1
+		JR	scroll			
+
+; ------------------------------------------------------------------------------
+; Subroutine: Set text color (same as set graphics color)
+; ------------------------------------------------------------------------------
+bbxSetColor:	EQU	bbxSetGfxColor
+
+; ------------------------------------------------------------------------------
+; Subroutine: tell message (as in BBC BASIC TELL routine) 
+; ------------------------------------------------------------------------------
+dspTell:	EX	(SP),HL		; Get return address
+		CALL	dspString0
+		EX	(SP),HL
+		RET
+
+; ------------------------------------------------------------------------------
+; Subroutine: Display prompt, always start on a new line
+; ------------------------------------------------------------------------------
+bbxDspPrompt:	LD	A,(CURPOSX)
+		AND	A
+		JR	Z,_pos0
+		CALL	dspCRLF		
+_pos0:		LD	A,'>'
+		JP	bbxDspChar
+
+; ------------------------------------------------------------------------------
+; Subroutine: Move cursor to start of next line
+; ------------------------------------------------------------------------------
+dspCRLF:	LD	A,CR
+		CALL	bbxDspChar
+		LD	A,LF
+		JP	bbxDspChar
+
+; ------------------------------------------------------------------------------
+; Subroutine: display string
+; Parameters: HL = address
+; dspStringA - start with length
+; dspStringB - length in register B
+; dspString0 - string terminated by 0
+; ------------------------------------------------------------------------------
+dspStringA:	LD	A,(HL)
+		LD	B,A
+		AND	A		; Length = 0 ?
+		RET	Z
+		INC	HL
+dspStringB:	LD	A,(HL)
+		CALL	bbxDspChar
+		INC	HL
+		DJNZ	dspStringB
+		RET
+
+dspString0:	LD	A,(HL)
+		INC	HL
+		OR	A
+		RET	Z
+		CALL	bbxDspChar
+		JR	dspString0
+
+
 ; -----------------------------------------------------------------------------------
 ; Subroutine: display cursor sprite (blink on and off)
 ; -----------------------------------------------------------------------------------
@@ -596,7 +394,7 @@ dspCursor:	PUSH	BC
 		PUSH	DE
 		PUSH	HL
 		PUSH	AF
-		RST	R_IRQstop
+		CALL	bbxIRQstop
 		LD	BC,$0008		; Counter
 		LD	DE,$3800		; Beginning of sprite pattern table
 		LD	HL,$3C00		; Beginning of attribute table
@@ -631,97 +429,13 @@ dspCursor:	PUSH	BC
 		SRL	A
 		SRL	A
 _endFlash:	CALL	vdpWriteByte
-		RST	R_IRQstart
+		CALL	bbxIRQstart
 		POP	AF
 		POP	HL
 		POP	DE
 		POP	BC
 		RET
 
-; --------------------------------------
-; Subroutine: scroll screen up if needed
-; --------------------------------------
-scroll:		LD	A,(MAXLIN)
-		DEC	A
-		CP	D
-		RET	NC			; No (further) scrolling needed
-		PUSH	BC
-		PUSH	DE
-		PUSH	HL
-		LD	D,A			; Save last line i.e. number of lines to scroll
-		LD	HL,$0100		; Source=line 1, Destination line 0
-_repeatScroll:	CALL	vdpCopyLine
-		INC	H
-		INC	L
-		DEC	D			; Row counter
-		JR	NZ, _repeatScroll
-		DEC	H
-		LD	A,H
-		CALL	vdpClearLine
-		POP	HL
-		POP	DE
-		POP	BC
-		DEC	D			; cusor position Y -1
-		JR	scroll			
-
-
-; ------------------------------------------------------------------------------
-; Subroutine: Set text color (same as set graphics color)
-; ------------------------------------------------------------------------------
-bbxSetColor:	EQU	bbxSetGfxColor
-
-; ------------------------------------------------------------------------------
-; Subroutine: Move cursor to start of next line
-; ------------------------------------------------------------------------------
-dspCRLF:	LD	A,CR
-		RST	R_dspChar
-		LD	A,LF
-		RST	R_dspChar
-		RET
-
-; ------------------------------------------------------------------------------
-; Subroutine: Display prompt, always start on a new line
-; ------------------------------------------------------------------------------
-bbxDspPrompt:	LD	A,(CURPOSX)
-		AND	A
-		JR	Z,_pos0
-		RST	R_dspCRLF		
-_pos0:		LD	A,'>'
-		RST	R_dspChar
-		RET
-
-; ------------------------------------------------------------------------------
-; Subroutine: display string
-; Parameters: HL = address
-; dspStringA - start with length
-; dspStringB - length in register B
-; dspString0 - string terminated by 0
-; ------------------------------------------------------------------------------
-dspStringA:	LD	A,(HL)
-		LD	B,A
-		AND	A		; Length = 0 ?
-		RET	Z
-		INC	HL
-dspStringB:	LD	A,(HL)
-		RST	R_dspChar
-		INC	HL
-		DJNZ	dspStringB
-		RET
-
-dspString0:	LD	A,(HL)
-		INC	HL
-		OR	A
-		RET	Z
-		RST	R_dspChar
-		JR	dspString0
-
-; ------------------------------------------------------------------------------
-; Subroutine: tell message (as in BBC BASIC TELL routine) 
-; --------------------------------------------------------------------------
-dspTell:	EX	(SP),HL		; Get return address
-		CALL	dspString0
-		EX	(SP),HL
-		RET
 
 ; ------------------------------------------------------------------------------
 ; Subroutine: VDP copy one line to another line (pattern + color)
@@ -731,7 +445,7 @@ dspTell:	EX	(SP),HL		; Get return address
 ; ------------------------------------------------------------------------------
 vdpCopyLine:	PUSH	HL
 		PUSH	DE
-		RST	R_IRQstop
+		CALL	bbxIRQstop
 		LD	DE,HL
 		SET	6,E			; Write modus for destination
 		XOR	A
@@ -767,7 +481,7 @@ _repeatColSrc:	INI
 		LD	HL,VDPBUF
 _repeatColDest:	OUTI
 		JR	NZ,_repeatColDest
-_endCopyLine:	RST	R_IRQstart
+_endCopyLine:	CALL	bbxIRQstart
 		POP	DE
 		POP	HL
 		RET
@@ -777,7 +491,7 @@ _endCopyLine:	RST	R_IRQstart
 ; Parameters: A = Line to clear
 ; Uses:       VDPBUF
 ; ------------------------------------------------------------------------------
-vdpClearLine:	RST	R_IRQstop
+vdpClearLine:	CALL	bbxIRQstop
 		LD	C,A
 		SET	6,C
 		XOR	A
@@ -798,18 +512,11 @@ _repeatClrPat:	OUT	(IOVDP0),A		; Clear Pattern
 _repeatClrCol:	OUT	(IOVDP0),A		; Clear Color (set to default color)
 		NOP				; wait for VDP memory 29 T-states required
 		DJNZ	_repeatClrCol
-_endClrLine:	RST	R_IRQstart
-		RET
+_endClrLine:	JP	bbxIRQstart
 
-; ------------------------------------------------------------------------------
-; Conversion table
-CONVTAB:	DB	$F0,CUU		; Key up
-		DB	$F1,CUD		; Key down
-		DB	$F2,CUB		; Key left
-		DB	$F3,CUF		; Key right
-		DB	$F4,DEL		; Delete
-		DB	$F5,INS		; Insert
-		DB	$FF,$00		; End of table
+; -------------------
+; *** Static Data ***
+; -------------------
 
 ; ------------------------------------------------------------------------------
 ; Characterset bitmap definition 8x4 bit
@@ -935,7 +642,6 @@ CHARDEF128:	DB	$00,$00,$00,$00	; 32 <space>
 		DB	$00,$05,$A0,$00	; 126 ~
 		DB	$00,$00,$00,$00	; 127 <del>
 
-
 ; -------------------------------
 ; *** RAM for BBX80 variables ***
 ; -------------------------------
@@ -944,23 +650,16 @@ CHARDEF128:	DB	$00,$00,$00,$00	; 32 <space>
 
 		PUBLIC	CURPOS
 		PUBLIC	FLSCUR
+		PUBLIC	FLSPEED
+		PUBLIC	CURPOSY
+		PUBLIC	CURPOSX
 
-; Variables for console i/o
-CURPOS:		DW	0		; Cursor position x,y
-FLSCUR:		DB	0		; Flash cursor counter
-LASTKEY:	DW	0		; Last key pressed / repeat counter
+CURPOS:		DS	2		; Cursor position x,y
+FLSCUR:		DS	1		; Flash cursor counter
+FLSPEED:	DS	1		; Flash cursor speed control
 
-; Constants
 CURPOSX:	EQU	CURPOS+0
 CURPOSY:	EQU	CURPOS+1
 
-; ---------------------------------------
-; *** BASIC RAM, additional variables ***
-; ---------------------------------------
 
-		SECTION BASICRAM
-
-		PUBLIC	VDPBUF
-
-VDPBUF:	DS	256,0		; 256 Byte VDP buffer (must be aligned to 256 byte page)
  

@@ -1,25 +1,39 @@
 ; ------------------------------------------------------------------------------
-; BBX80 CP/M host v1.0
+; CP/M host v1.1
 ;
 ; This module contains specific CP/M routines.
 ; It is based on the code in the bbc basic cmos.z80 file.
 ; The code is restructured into OS functions and lower level BDOS calls.
+; MSX BDOS deviations from CP/M are handled via the directive MSXDOS.
 ; ------------------------------------------------------------------------------
 
-		INCLUDE	"BBX80.INC"
- 
 		SECTION CPMHOST
+
+		INCLUDE	"bbx80.inc"
+		INCLUDE "console.inc"
+
+		PUBLIC	bbxDosOpen
+		PUBLIC	bbxDosShut
+		PUBLIC	bbxDosBget
+		PUBLIC	bbxDosBput
+		PUBLIC	bbxDosStat
+		PUBLIC	bbxDosGetext
+		PUBLIC	bbxDosGetPtr
+		PUBLIC	bbxDosPutPtr
+		PUBLIC	bbxDosReset
+		PUBLIC	bbxDosCall
+		PUBLIC	bbxDosDot
+		PUBLIC	bbxDosDir
+		PUBLIC	bbxDosExecIn
 
 		PUBLIC	bbxHostInit
 		PUBLIC	bbxHostExit
-
 		PUBLIC	bbxDosType
 		PUBLIC	bbxDosOpt
 		PUBLIC	bbxDosResDisk
 		PUBLIC	bbxDosDrive
 		PUBLIC	bbxDosErase
 		PUBLIC	bbxDosRename
-		PUBLIC	bbxDosResDisk
 		PUBLIC	bbxDosEscCtl
 		PUBLIC	bbxDosExec
 		PUBLIC	bbxDosSpool
@@ -27,19 +41,6 @@
 		PUBLIC	bbxHostSave
 		PUBLIC	bbxHostBload
 		PUBLIC	bbxHostLoad
-		PUBLIC	bbxDosDot
-		PUBLIC	bbxDosDir
-		PUBLIC	bbxDosOpen
-		PUBLIC	bbxDosBget
-		PUBLIC	bbxDosBput
-		PUBLIC	bbxDosStat
-		PUBLIC	bbxDosGetext
-		PUBLIC	bbxDosGetPtr
-		PUBLIC	bbxDosPutPtr
-		PUBLIC	bbxDosExecIn
-		PUBLIC	bbxDosShut
-		PUBLIC	bbxDosReset
-		PUBLIC	bbxDosCall
 
 		PUBLIC	dosOutChar
 		PUBLIC	dosGetKey
@@ -66,7 +67,6 @@
 		EXTERN	OSOPEN
 		EXTERN	OSSHUT
 		EXTERN	ABORT
-		EXTERN	SORRY
 
 ; ------------------------------------------------------------------------------
 ; OSSAVE - Save an area of memory to a file.
@@ -483,10 +483,24 @@ BDOS0:		PUSH	BC
 		PUSH	HL
 		PUSH	IX
 		PUSH	IY
+IFDEF MSXDOS
+		EXX
+		PUSH	BC
+		PUSH	DE
+		PUSH	HL
+		EXX
+ENDIF
 		LD	C,A
 		CALL	BDOS
 		INC	H		;* TEST H
 		DEC	H		;* CP/M 3 ONLY
+IFDEF MSXDOS
+		EXX
+		POP	HL
+		POP	DE
+		POP	BC
+		EXX
+ENDIF
 		POP	IY
 		POP	IX
 		POP	HL
@@ -744,13 +758,21 @@ bbxDosErase:	CALL	SETUP0		;*ERA, *ERASE
 
 ; ------------------------------------------------------------------------------
 ; Subroutine: Reset disk
+; MSXDOS not implemented / not required
 ; ------------------------------------------------------------------------------
+IFDEF MSXDOS
+bbxDosResDisk:	EQU	SORRY
+ELSE
 bbxDosResDisk:	LD	C,13		;*RESET
 		JP	XEQDOS
+ENDIF
 
 ; ------------------------------------------------------------------------------
 ; Subroutine: Set/get drive (disk)
 ; ------------------------------------------------------------------------------
+IFDEF MSXDOS
+bbxDosDrive:	EQU	SORRY
+ELSE
 bbxDosDrive:	CALL	SETUP0		;*DRIVE
 		LD	A,(FCB)
 		DEC	A
@@ -758,6 +780,7 @@ bbxDosDrive:	CALL	SETUP0		;*DRIVE
 		LD	E,A
 		LD	C,14
 		JP	XEQ0
+ENDIF
 
 dosGetDrive:	LD	A,(FCB)
 		DEC	A
@@ -838,7 +861,11 @@ bbxDosDir:	LD	A,'?'		;*DIR
 		CP	CR
 		JP	NZ,HUH
 		LD	C,17		; Search first file
+IFDEF MSXDOS
+DIR0:		LD	B,2
+ELSE
 DIR0:		LD	B,4
+ENDIF
 DIR1:		CALL	LTRAP
 		LD	DE,FCB
 		LD	HL,DSKBUF
