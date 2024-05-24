@@ -42,6 +42,9 @@ Includes VT100 console and TMS9918A or compatible graphics card commands.
 
 **C: Advanced**
 Includes VT100 console, TMS9918A graphics card commands and the latest additional features . This edition requires a system with RomWBW.
+## MSX
+Requires MSX1 or MSX2 with MSXDOS 1.0 or higher.  Includes load/save file to disk and graphics commands. Limitation is that only screen 2 is implemented for console and graphics. This is still a work in progress, more features will be added in the future.
 
 ## Other computers
-Other computers that easily meet the minimum requirements are MSX1, SC3000, SV-328 and Coleco Adam.
+Other computers that easily meet the minimum requirements are SC3000, SV-328 and Coleco Adam.
+
