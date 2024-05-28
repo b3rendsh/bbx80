@@ -336,7 +336,7 @@ _repeatScroll:	CALL	vdpCopyLine
 bbxSetColor:	EQU	bbxSetGfxColor
 
 ; ------------------------------------------------------------------------------
-; Subroutine: tell message (as in BBC BASIC TELL routine) 
+; Subroutine: tell message (as in BASIC TELL routine) 
 ; ------------------------------------------------------------------------------
 dspTell:	EX	(SP),HL		; Get return address
 		CALL	dspString0

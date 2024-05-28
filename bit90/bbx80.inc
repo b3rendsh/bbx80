@@ -7,6 +7,8 @@
 ; Version
 DEFL BASVERSION = "V3.0"
 DEFL BBXVERSION = "V1.3"
+DEFL BBXEDITION = "BIT90 Edition"
+
 
 ; BASIC Directives
 DEFINE	TITLESCREEN	; Credits in title screen

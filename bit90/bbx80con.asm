@@ -716,7 +716,7 @@ dspString0:	LD	A,(HL)
 		JR	dspString0
 
 ; ------------------------------------------------------------------------------
-; Subroutine: tell message (as in BBC BASIC TELL routine) 
+; Subroutine: tell message (as in BASIC TELL routine) 
 ; --------------------------------------------------------------------------
 dspTell:	EX	(SP),HL		; Get return address
 		CALL	dspString0

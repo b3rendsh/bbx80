@@ -16,23 +16,23 @@ DEFINE	BBX80		; BBX80 modifications in the BASIC code
 DEFINE	INCDOS		; Include DOS (CP/M) functions
 
 IFDEF BBX80A
-DEFL BBXEDITION = "BBX80A VT100 Edition"
+DEFL BBXEDITION = "VT100 Edition"
 ENDIF
 
 IFDEF BBX80B
-DEFL BBXEDITION = "BBX80B Basic Edition"
+DEFL BBXEDITION = "Basic Edition"
 DEFINE	INCVDP		; Include graphics module
 ENDIF
 
 IFDEF BBX80C
-DEFL BBXEDITION = "BBX80C Advanced Edition"
+DEFL BBXEDITION = "Advanced Edition"
 DEFINE	INCVDP		; Include graphics module
 DEFINE	INCRTC		; Include realtime clock / timer module
 DEFINE	VT510		; VT510 extensions e.g.show/hide cursor 
 ENDIF
 
 IFDEF BBX80Z
-DEFL BBXEDITION = "BBX80Z Ultimate Edition"
+DEFL BBXEDITION = "Ultimate Edition"
 DEFINE	INCVDP		; Include graphics module
 DEFINE	INCRTC		; Include realtime clock / timer module
 ;DEFINE	INCPSG		; Include sound module

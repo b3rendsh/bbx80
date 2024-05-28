@@ -1,13 +1,13 @@
-BBC BASIC for BIT90
-===================
+BBX80 for BIT90
+===============
 
-In this folder are the sources for a customized version of BBC BASIC for the 
-BIT90 Home computer.
+In this folder are the sources for the BIT90 home computer edition of BBX80.
 
 Changelog:
 ----------
 V1.3:
 - restructured codebase, no functional changes
+- changed credits
 V1.2:
 - added *BLOAD command to load Coleco games from tape (for the ROM edition)
 V1.1: 

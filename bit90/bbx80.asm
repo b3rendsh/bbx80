@@ -20,8 +20,8 @@
 		;DEFINE	BBX80CART
 
 		SECTION BBX80			; Boot machine
-		SECTION	BASIC			; BBC BASIC interpreter
-		SECTION	BASICASM		; BBC BASIC inline assembler
+		SECTION	BASIC			; BASIC interpreter
+		SECTION	BASICASM		; BASIC inline assembler
 		SECTION	BIT90HOST		; BIT90 host routines
 		SECTION	BBX80CON		; BBX80 console
 		SECTION BBX80LIB		; BBX80 library
@@ -32,7 +32,7 @@
 		; The Colecovision has 1K internal RAM: $7000-$73FF
 		; The BIT90 has 2K internal RAM: $7000-$77FF
 
-		SECTION	BASICRAM		; BBC BASIC RAM variables (768 bytes + 256 VDP buffer)
+		SECTION	BASICRAM		; BASIC RAM variables (768 bytes + 256 VDP buffer)
 		ORG	$7000
 		SECTION BASICVAR		; BASIC Initialized variables
 		ORG	$7400		
@@ -138,9 +138,9 @@ IRQ_INT_VECT:	DB	$C9,$00,$00		; $801E
 NMI_INT_VECT:	JP	bbxNMI			; $8021
 
 ; $8024 Title, 3 lines separated by '/' where Character $1D=(C)
-GAME_NAME:	DB	"BBBX80 ",$1D," 2022 H.J.BERENDS/" 
-		DB	"BBC BASIC Z80 ",$1D," R.T.RUSSELL/"	
-		DB	"2022"
+GAME_NAME:	DB	$1D," 2024 H.J. BERENDS/"	
+		DB	"BBX80 BASIC FOR BIT90/" 
+		DB	"2024"
 
 ENDIF
 
@@ -336,8 +336,8 @@ _mem_03:	PUSH	DE			; PAGE (see LOMEM)
 
 		RST	R_dspTell
 		DB	BELL
-		DB	"BBX80 FOR BIT90 ",BBXVERSION,CR,LF
-		DB	"BBC BASIC (Z80) ",BASVERSION,CR,LF
+		DB	"BBX80 BASIC ",BASVERSION,CR,LF
+		DB	BBXEDITION,$20,BBXVERSION,CR,LF
 		DB	0
 
 IFDEF BBX80ROM
@@ -364,7 +364,7 @@ ENDIF
 		DEC	HL
 		CALL	PBCDL
 		RST	R_dspTell
-		DB	" BYTES FREE",CR,LF
+		DB	" Bytes Free",CR,LF
 		DB	CR,LF
 		DB	0 
 

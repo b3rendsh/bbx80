@@ -18,15 +18,15 @@
 ; ------------------
 
 		SECTION BBX80		; Boot machine and console routines
-		SECTION	BASIC		; BBC BASIC interpreter
-		SECTION	BASICASM	; BBC BASIC inline assembler
+		SECTION	BASIC		; BASIC interpreter
+		SECTION	BASICASM	; BASIC inline assembler
 		SECTION	MSXHOST		; MSX (BIOS) routines
 		SECTION	CPMHOST		; CP/M (MSXDOS) routines
 		SECTION BBX80LIB	; BBX80 library
 		SECTION	STATIC1		; BASIC static variables data
 		SECTION	STATIC2		; BBX80 static variables data
 
-		SECTION	BASICRAM	; BBC BASIC RAM variables (768 bytes + 256 VDP buffer)
+		SECTION	BASICRAM	; BASIC RAM variables (768 bytes + 256 VDP buffer)
 		ORG	$4300		; Align to 256 bytes page
 		SECTION BASICVAR	; BASIC Initialized variables
 		SECTION BBX80VAR	; BBX80 Initialized variables
@@ -173,10 +173,8 @@ bbx80Init:	; Init Branch table and Variables
 
 		; Display credits
 		CALL	dspTell
+		DB	"BBX80 BASIC ",BASVERSION,CR,LF
 		DB	BBXEDITION,$20,BBXVERSION,CR,LF
-		DB	"(C) 2024 H.J.Berends",CR,LF
-		DB	"BBC BASIC (Z80) ",BASVERSION,CR,LF
-		DB	"(C) 1987 R.T.Russell",CR,LF
 		DB	0
 
 		; Display free memory
@@ -188,7 +186,7 @@ bbx80Init:	; Init Branch table and Variables
 		DEC	HL
 		CALL	PBCDL			; Print Number in HL
 		CALL	dspTell
-		DB	" Bytes free",CR,LF
+		DB	" Bytes Free",CR,LF
 		DB	CR,LF
 		DB	0 
 endCredits:	POP	AF			; Z-Flag
