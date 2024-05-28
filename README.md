@@ -1,12 +1,12 @@
 ﻿# BBX80
-BBC BASIC for a Z80 home computer.
+BASIC for a Z80 home computer.
 
 ## General Information
 
-In this repository you find BBC BASIC (Z80) implementation source code and binaries for a Z80 home computer that may not have a Disk OS like CP/M.
+In this repository you find BASIC source code and binaries for a Z80 home computer that may not have a Disk OS like CP/M.
 
 #### The system setup consists of three main blocks:
-1. BBC BASIC (Z80) implementation from R.T. Russell
+1. BASIC: A derived work of BBC BASIC (Z80) version 3.0 by R.T. Russell
 2. BBX80: general host and console functions
 3. Host computer specific functions
 
@@ -35,7 +35,7 @@ Included are the core commands as in BBC BASIC Z80, without the CP/M OS commands
 There are 3 different editions for a typical Z80/Z180 retrocomputer (e.g. rcbus)
 
 **A: VT100**
-As a reference I have implemented the standard CP/M 2.2 (compatible) version of BBC BASIC with some enhancements for a VT100 console. 
+As a reference I have implemented the standard CP/M 2.2 (compatible) version of BASIC with some enhancements for a VT100 console. 
 
 **B: Basic**
 Includes VT100 console and TMS9918A or compatible graphics card commands.
@@ -48,3 +48,5 @@ Requires MSX1 or MSX2 with MSXDOS 1.0 or higher.  Includes load/save file to dis
 ## Other computers
 Other computers that easily meet the minimum requirements are SC3000, SV-328 and Coleco Adam.
 
+## Credits
+A substantial part of this BASIC is derived work of BBC BASIC (Z80) version 3.0, many thanks to R.T.Russell for open sourcing it. 
