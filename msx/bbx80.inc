@@ -1,12 +1,12 @@
 ; ------------------------------------------------------------------------------
-; BBX80 Include v1.0
+; BBX80 Include v1.1
 ;
 ; Definitions used in BBX80 and BASIC modules
 ; ------------------------------------------------------------------------------
 
 ; Version
 DEFL BASVERSION = "V3.0"
-DEFL BBXVERSION = "V1.0"
+DEFL BBXVERSION = "V1.1"
 DEFL BBXEDITION = "MSX Edition"
 
 ; BASIC Directives
@@ -27,9 +27,11 @@ SPEED:		EQU	$600		; Processor speed indicator (Z80/3.6Mhz)
 
 ; Use TMS9918A video adapter
 DEFINE TMS9918A
+DEFINE EXTVDP				; Include extended VDP commands
 GCOLUMNS:	EQU	50		; Screen width in graphics mode
 IOVDP0:		EQU	$98		; TMS9918A R/W data
 IOVDP1:		EQU	$99		; TMS9918A Control
+
 
 ; CP/M Definitions
 DEFINE MSXDOS				; Handle MSXDOS deviations from CP/M 2.2			

@@ -1,12 +1,14 @@
 ; ------------------------------------------------------------------------------
-; BBX80 VDP_TMS9918A Library v1.0
-; Copyright (C) 2024 H.J. Berends
+; BBX80 VDP_TMS9918A Library v1.1
+; Copyright (C) 2026 H.J. Berends
 ;
 ; You can freely use, distribute or modify this program.
 ; It is provided freely and "as it is" in the hope that it will be useful, 
 ; but without any warranty of any kind, either expressed or implied.
 ; ------------------------------------------------------------------------------
 ; TMS9918A hardware dependent graphics commands and subroutines
+; Note: define EXTVDP for extended VDP commands support
+;       using a color function will set TXTMODE to color
 ; ------------------------------------------------------------------------------
 
 		SECTION BBX80LIB
@@ -31,6 +33,10 @@
 
 		EXTERN	bbxIRQstop
 		EXTERN	bbxIRQstart
+		
+IFDEF EXTVDP
+		EXTERN	TXTMODE
+ENDIF
 
 ; ------------------------------------------------------------------------------
 ; Display mode (not implemented)
@@ -51,6 +57,10 @@ bbxClg:		CALL	bbxIRQstop
 		LD	A,(GCOLOR)		; Set all pixel colors to default color
 		LD	D,$20			; Color table offset
 		CALL	vdpWriteBlock
+IFDEF EXTVDP
+		LD	A,1
+		LD	(TXTMODE),A
+ENDIF
 		JP	bbxIRQstart
 
 ; ------------------------------------------------------------------------------
@@ -102,7 +112,12 @@ exitDraw:	POP	HL
 ; Color number +192 sets background + backdrop color
 ; Note: the physical color numbers of the TMS9929A VDP are used.
 ; ------------------------------------------------------------------------------
-bbxSetGfxColor:	LD	H,L			; Copy color to H
+bbxSetGfxColor:	
+IFDEF EXTVDP
+		LD	A,1
+		LD	(TXTMODE),A
+ENDIF
+		LD	H,L			; Copy color to H
 		LD	A,L
 		AND	$0F			; Color value 0..15
 		BIT	7,H			; set foreground color? 

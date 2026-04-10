@@ -1,6 +1,6 @@
 ; ------------------------------------------------------------------------------
-; BBX80 v1.0
-; Copyright (C) 2024 H.J. Berends
+; BBX80 v1.1
+; Copyright (C) 2026 H.J. Berends
 ;
 ; You can freely use, distribute or modify this program.
 ; It is provided freely and "as it is" in the hope that it will be useful, 
@@ -33,7 +33,6 @@
 		SECTION	BBX80RAM	; BBX80 variables (dynamic)
 		SECTION	BBX80FREE	; Remaining free internal RAM for user
 
-
 ; -----------------------------------------------
 ; *** Boot the MSX host machine / start basic ***
 ; -----------------------------------------------
@@ -65,12 +64,17 @@
 		EXTERN	FLAGS
 		EXTERN	VAR1_START
 		EXTERN	VAR1_RAM
+		EXTERN	END
+		EXTERN	LIST
+		EXTERN	NXT
+		EXTERN	HEX
 
 		; msx
 		EXTERN	msxKey
 		EXTERN	msxSetCliksw
 		EXTERN	msxInitText
 		EXTERN	msxBeep
+		EXTERN	msxTurbo
 
 		; common
 		EXTERN	bbxCls
@@ -164,12 +168,12 @@ bbx80Init:	; Init Branch table and Variables
 		CALL	bbxCls
 		CALL	bbxIRQenable
 
-
 		; Initialize host (CP/M)
 		CALL	bbxHostInit		; Z-flag reset indicates autorun
+		JP	NZ,endCredits
+
 		PUSH	DE			; HIMEM
 		PUSH	AF
-		JP	NZ,endCredits
 
 		; Display credits
 		CALL	dspTell
@@ -189,9 +193,9 @@ bbx80Init:	; Init Branch table and Variables
 		DB	" Bytes Free",CR,LF
 		DB	CR,LF
 		DB	0 
-endCredits:	POP	AF			; Z-Flag
+		POP	AF			; Z-Flag
 		POP	DE			; HIMEM
-		LD	HL,BBX80USER		; PAGE
+endCredits:	LD	HL,BBX80USER		; PAGE
 		RET
 
 ; -----------------------------------------------------------------------------
@@ -207,12 +211,15 @@ bbx80Exit:	CALL	bbxIRQenable
 bbxCOMDS:	DEFM	"BY"
 		DEFB	'E'+80H
 		DEFW	bbx80Exit
-		DEFM	"DI"			; MSX: drive letter must be specificied e.g. *dir a:*.*
+		DEFM	"DI"
 		DEFB	'R'+80H
 		DEFW	bbxDosDir
-		DEFM	"DRIV"			; MSX: not implemented (not compatible)
+		DEFM	"DRIV"
 		DEFB	'E'+80H
 		DEFW	bbxDosDrive
+		DEFM	"EN"			; MSX: custom end program with screen reset
+		DEFB	'D'+80H
+		DEFW	bbxEnd
 		DEFM	"ERAS"
 		DEFB	'E'+80H
 		DEFW	bbxDosErase
@@ -231,6 +238,9 @@ bbxCOMDS:	DEFM	"BY"
 		DEFM	"KEYSO"
 		DEFB	'N'+80H
 		DEFW	bbxKeysOn
+		DEFM	"LIS"			; MSX: custom fast list
+		DEFB	'T'+80H
+		DEFW	bbxList
 		DEFM	"LOA"
 		DEFB	'D'+80H
 		DEFW	bbxHostBload
@@ -255,12 +265,13 @@ bbxCOMDS:	DEFM	"BY"
 		DEFM	"SYSTE"			; equivalent of msx call system (replaces *cpm)
 		DEFB	'M'+80H
 		DEFW	bbx80Exit
-		DEFM	"TYP"			; MSX: drive letter must be specified e.g. *type a:readme.txt
+		DEFM	"TURB"			; MSX: turbo off/on
+		DEFM	'O'+80H
+		DEFW	bbxTurbo
+		DEFM	"TYP"
 		DEFB	'E'+80H
 		DEFW	bbxDosType
 		DEFB	0FFH
-
-
 
 ; -------------------------------
 ; *** MSX customized routines *** 
@@ -585,7 +596,30 @@ CONVTAB:	DB	$12,INS		; Insert
 ; -----------------------------------------------------------------------
 bbxBell:	EQU	msxBeep
 
+; -----------------------------------------------------------------------
+; Reset screen and end program
+; Note: the text color is not reset to default
+; -----------------------------------------------------------------------
+bbxEnd:		CALL	vdpInit
+		CALL	bbxCls
+		JP	END
 
+; -----------------------------------------------------------------------
+; Faster list: clears screen first and doesn't update color while scrolling
+; -----------------------------------------------------------------------
+bbxList:	PUSH	HL		; save commandline position (CMD uses HL)
+		CALL	bbxCls		; clear screen
+		POP	IY		; restore commandline position (BASIC uses IY)
+		CALL	NXT		; skip spaces
+		JP	LIST		; execute list command
+
+; -----------------------------------------------------------------------
+; Processor turbo mode
+; -----------------------------------------------------------------------
+bbxTurbo:	CALL	HEX
+		LD	A,E
+		JP	msxTurbo
+		
 ; --------------------------
 ; *** Static Data 2 of 2 ***
 ; --------------------------

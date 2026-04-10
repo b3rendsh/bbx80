@@ -1,5 +1,5 @@
 ; ------------------------------------------------------------------------------
-; CP/M host v1.1
+; CP/M host v1.2
 ;
 ; This module contains specific CP/M routines.
 ; It is based on the code in the bbc basic cmos.z80 file.
@@ -67,6 +67,15 @@
 		EXTERN	OSOPEN
 		EXTERN	OSSHUT
 		EXTERN	ABORT
+		
+IFDEF MSXDOS
+
+ABORTVE		EQU	$F1E6		; MSXDOS 1 abort vector
+DOSVER		EQU	$F313	  	; DOS version        
+DISKVE		EQU	$F323		; MSXDOS disk error vector
+BREAKV		EQU	$F325		; MSXDOS 2 abort vector 
+
+ENDIF
 
 ; ------------------------------------------------------------------------------
 ; OSSAVE - Save an area of memory to a file.
@@ -475,7 +484,11 @@ BDOS1:		CALL	BDOS0		;*
 		RET			;*
 CPMERR:		LD	A,255		;* CP/M 3
 		CALL	EXTERR		;* BDOS ERROR
+IFDEF MSXDOS
+		DEFM	"MSX-DOS Error"
+ELSE
 		DEFM	"CP/M Error"	;*
+ENDIF
 		DEFB	0		;*
 
 BDOS0:		PUSH	BC
@@ -489,17 +502,20 @@ IFDEF MSXDOS
 		PUSH	DE
 		PUSH	HL
 		EXX
-ENDIF
 		LD	C,A
-		CALL	BDOS
+		CALL	BDOSMSX
 		INC	H		;* TEST H
 		DEC	H		;* CP/M 3 ONLY
-IFDEF MSXDOS
 		EXX
 		POP	HL
 		POP	DE
 		POP	BC
 		EXX
+ELSE		
+		LD	C,A
+		CALL	BDOS
+		INC	H		;* TEST H
+		DEC	H		;* CP/M 3 ONLY
 ENDIF
 		POP	IY
 		POP	IX
@@ -508,6 +524,11 @@ ENDIF
 		POP	BC
 		RET
 
+IFDEF MSXDOS
+BDOSMSX:	LD	(ABORTSP),SP	; save caller stack for custom MSXDOS abort handler
+		JP	BDOS
+ENDIF
+		
 ; ------------------------------------------------------------------------------
 ; WRITE - Write a record to a disk file.
 ;   Inputs: DE addresses FCB.
@@ -770,23 +791,36 @@ ENDIF
 ; ------------------------------------------------------------------------------
 ; Subroutine: Set/get drive (disk)
 ; ------------------------------------------------------------------------------
-IFDEF MSXDOS
-bbxDosDrive:	EQU	SORRY
-ELSE
 bbxDosDrive:	CALL	SETUP0		;*DRIVE
 		LD	A,(FCB)
 		DEC	A
 		JP	M,HUH
 		LD	E,A
+IFDEF MSXDOS
+		; MSXDOS 1 doesn't clear the z-flag in the set/get drive functions
+		LD	A,(HL)
+		CP	CR
+		JP	NZ,HUH
+		LD	A,14
+		CALL	BDOS0
+		XOR	A
+		RET
+dosGetDrive:	LD	A,(FCB)
+		DEC	A		; drive specified?
+		RET	P		; p=yes (m=no)
+		LD	A,25
+		CALL	BDOS0
+		XOR	A
+		RET
+ELSE
 		LD	C,14
 		JP	XEQ0
-ENDIF
-
 dosGetDrive:	LD	A,(FCB)
-		DEC	A
+		DEC	A		; drive specified?
+		RET	P		; p=yes (m=no)
 		LD	C,25
-		CALL	M,BDC
-		RET
+		JP	BDC
+ENDIF
 
 ; ------------------------------------------------------------------------------
 ; Subroutine: Rename file
@@ -860,17 +894,18 @@ bbxDosDir:	LD	A,'?'		;*DIR
 		CALL	SETUP
 		CP	CR
 		JP	NZ,HUH
-		LD	C,17		; Search first file
+		LD	C,17		; search first file
 IFDEF MSXDOS
-DIR0:		LD	B,2
+DIR0:		LD	B,2		; use 2 columns
 ELSE
-DIR0:		LD	B,4
+DIR0:		LD	B,4		; use 4 columns
 ENDIF
 DIR1:		CALL	LTRAP
 		LD	DE,FCB
 		LD	HL,DSKBUF
 		CALL	dosSetDMA
-		CALL	dosSearch
+		LD	A,C		; search directory
+		CALL	BDOS1
 		JP	M,CRLF
 		RRCA
 		RRCA
@@ -887,7 +922,7 @@ DIR1:		CALL	LTRAP
 		INC	HL		;**
 		BIT	7,(HL)		;SYSTEM FILE?
 		POP	HL
-		LD	C,18		; Search next file
+		LD	C,18		; search next file
 		JR	NZ,DIR1
 		PUSH	BC
 		CALL	dosGetDrive
@@ -997,18 +1032,15 @@ PTEXT:		LD	A,(HL)
 		RET
 
 ; ------------------------------------------------------------------------------
-; OSINIT - Initialise RAM mapping etc.
+; HOSTINIT - Initialise HOST DOS (called from OSINIT)
 ; If BASIC is entered by BBCBASIC FILENAME then file
 ; FILENAME.BBC is automatically CHAINed.
 ;
 ; Outputs: DE = initial value of HIMEM (top of RAM)
-;          HL = initial value of PAGE (user program)
 ;          Z-flag reset indicates AUTO-RUN.
 ;  Destroys: A,B,C,D,E,H,L,F
 ; ------------------------------------------------------------------------------
-bbxHostInit:	CALL	dosErrMode
-
-		; Init DOS variables
+bbxHostInit:	; Init DOS variables
 		XOR	A
 		LD	B,INILEN
 		LD	HL,TABLE
@@ -1030,29 +1062,121 @@ NOBOOT:		EX	DE,HL
 		; Set HIMEM
 		LD	DE,(6)			; CP/M: HIMEM
 		LD	E,A			; PAGE BOUNDARY
+		PUSH	AF			; save z-flag
+		
+IFNDEF MSXDOS
+		PUSH	DE			; save himem
+		; set CP/M error mode to: error code is returned in H and error message is printed.
+		LD	C,45
+		LD	E,254
+		CALL	BDOS
+		POP	DE			; restore himem
+		POP	AF			; restore Z-flag
+		RET		
+ELSE
+		; MSXDOS: install custom error handler that aborts the BDOS function
+		LD	HL,(DISKVE)		; MSXDOS disk handler vector
+		LD	(DISKVSAV),HL
+		EX	DE,HL			; himem
+		LD	DE,TotalSize		; size of custom error handler
+		XOR	A			; clear c-flag
+		SBC	HL,DE
+		PUSH	HL			; new himem
+		
+		; install custom error handler
+		LD	(DISKVE),HL
+		LD	D,H
+		LD	E,L
+		INC	DE
+		INC	DE
+		LD	(HL),E
+		INC	HL
+		LD	(HL),D			; set custom handler
+		LD	HL,ErrorHandler
+		LD	BC,ErrorSize
+		LDIR				; copy error handler routine
+
+		LD	A,(DOSVER)
+		CP	$22			; MSXDOS 2.2 or higher?
+		JR	NC,ABORT2		; c=no
+	
+		; set MSXDOS 1 abort vector
+		PUSH	HL
+		LD	HL,(ABORTVE)		; MSXDOS 1 abort vector
+		LD	(ABORTVSAV),HL
+		POP	HL
+		LD	(ABORTVE),DE
+		JR	ABORT12
+		
+		; set MSXDOS 2 abort vector
+ABORT2:		PUSH	HL
+		LD	HL,(BREAKV)		; MSXDOS 2 abort vector
+		LD	(ABORTVSAV),HL
+		POP	HL
+		LD	(BREAKV),DE
+		; set abort vector to abort handler
+		EX	DE,HL
+		LD	B,H
+		LD	C,L
+		INC	BC
+		INC	BC
+		LD	(HL),C
+		INC	HL
+		LD	(HL),B
+		INC	HL
+		EX	DE,HL
+		
+ABORT12:	LD	BC,AbortSize
+		LDIR				; copy abort handler routine
+		
+ENDERR:		POP	DE			; new himem
+		POP	AF			; restore Z-flag
 		RET
+
+; -------------------------------------------------
+
+ErrorHandler:	LD	C,2			; disk error: abort
+		RET
+ErrorSize	EQU	$-ErrorHandler
+
+AbortHandler:	XOR	A
+		DEC	A			; set error status
+		LD	SP,(ABORTSP)		; return to routine that called BDOS
+		RET
+AbortSize	EQU	$-AbortHandler
+
+TotalSize	EQU	ErrorSize+AbortSize+4	; 4 bytes required for the abort and break vectors
+
+ENDIF ; MSXDOS
 
 ; ------------------------------------------------------------------------------
 ; Subroutine: Stop interrupts and return to CP/M. 
 ; ------------------------------------------------------------------------------
-bbxHostExit:	RST	0
+bbxHostExit:	
+IFNDEF MSXDOS
+		RST	0
+ELSE
+		; uninstall custom error handler
+		LD	HL,(DISKVSAV)
+		LD	(DISKVE),HL
+		LD	HL,(ABORTVSAV)
+		
+		LD	A,(DOSVER)
+		CP	$22			; MSXDOS 2.2 or higher?
+		JR	NC,EXIT2		; nc=yes
+		
+		; uninstall MSXDOS 1 custom abort handler and exit
+		LD	(ABORTVE),HL
+		JR	TERM0
+		
+		; uninstall MSXDOS 2 custom abort handler and exit
+EXIT2:		LD	(BREAKV),HL
 
-; ------------------------------------------------------------------------------
-; Subroutine: Search first/next file
-; ------------------------------------------------------------------------------
-dosFSfirst:	LD	C,17
-		JR	dosSearch
-dosFSnext:	LD	C,18
-dosSearch:	LD	A,C
-		JP	BDOS1
-
-; ------------------------------------------------------------------------------
-; Subroutine: Set action on hardware error
-; Sets error mode to: error code is returned in H and error message is printed.
-; ------------------------------------------------------------------------------
-dosErrMode:	LD	C,45
-		LD	E,254
-		JP	BDOS
+		; terminate program without error code
+TERM0:		LD	C,0
+		CALL	BDOS			; terminate / never return
+		JR	$			; fail safe
+ENDIF
 
 ; ------------------------------------------------------------------------------
 ; Subroutine: Close file
@@ -1140,3 +1264,8 @@ TABLE:		DEFS	16		; FILE BLOCK POINTERS
 OPTVAL:		DEFB	0
 INILEN:		EQU	$-TABLE
 
+IFDEF MSXDOS
+DISKVSAV:	DEFW	0		; save disk error vector
+ABORTVSAV:	DEFW	0		; save abort vector
+ABORTSP:	DEFW	0		; abort stackpointer
+ENDIF

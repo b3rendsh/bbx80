@@ -1,12 +1,13 @@
 ; ------------------------------------------------------------------------------
-; BBX80 CON_TMS9918A Console v1.0
-; Copyright (C) 2024 H.J. Berends
+; BBX80 CON_TMS9918A Console v1.1
+; Copyright (C) 2026 H.J. Berends
 ;
 ; You can freely use, distribute or modify this program.
 ; It is provided freely and "as it is" in the hope that it will be useful, 
 ; but without any warranty of any kind, either expressed or implied.
 ; ------------------------------------------------------------------------------
 ; TMS9918A hardware dependent console output commands and subroutines.
+; Note: define EXTVDP for extended VDP commands support
 ; ------------------------------------------------------------------------------
 
 		SECTION BBX80LIB
@@ -58,6 +59,10 @@ bbxCls:		CALL	bbxIRQstop
 		LD	A,(TXTCOLOR)		; Set all pixel colors to default color
 		LD	D,$20			; Color table offset
 		CALL	vdpWriteBlock
+IFDEF EXTVDP
+		XOR	A
+		LD	(TXTMODE),A		; set textmode monochrome until color is used
+ENDIF
 		JP	bbxIRQstart
 
 ; -------------------------------------------
@@ -274,6 +279,11 @@ _repeatCharPat:	OUTI
 		JR	NZ,_repeatCharPat	
 ; end ---------------------------------------------------------------------------
 
+IFDEF EXTVDP
+		LD	A,(TXTMODE)
+		OR	A			; color or monochrome mode?
+		JR	Z,_endCharCol		; z=monochrome, skip write color
+ENDIF
 
 ; Block write colors for Byte 1 and Byte 2
 ; begin -------------------------------------------------------------------------
@@ -464,6 +474,11 @@ _repeatPatSrc:	INI
 		LD	HL,VDPBUF
 _repeatPatDest:	OUTI
 		JR	NZ,_repeatPatDest
+IFDEF EXTVDP
+		LD	A,(TXTMODE)
+		OR	A			; color or monochrome mode?
+		JR	Z,_endCopyLine		; z=monochrome, skip copy color
+ENDIF
 		SET	5,D			; Offset Color table
 		LD	C,IOVDP1
 		XOR	A
@@ -503,6 +518,11 @@ vdpClearLine:	CALL	bbxIRQstop
 _repeatClrPat:	OUT	(IOVDP0),A		; Clear Pattern
 		NOP				; wait for VDP memory 29 T-states required
 		DJNZ	_repeatClrPat
+IFDEF EXTVDP
+		LD	A,(TXTMODE)
+		OR	A			; color or monochrome mode?
+		JR	Z,_endClrLine		; z=monochrome, skip clear color
+ENDIF
 		XOR	A
 		OUT	(IOVDP1),A
 		SET	5,C			; Offset Color table
@@ -661,5 +681,8 @@ FLSPEED:	DS	1		; Flash cursor speed control
 CURPOSX:	EQU	CURPOS+0
 CURPOSY:	EQU	CURPOS+1
 
-
- 
+IFDEF EXTVDP
+		PUBLIC	TXTMODE
+		
+TXTMODE:	DS	1		; Text display mode: 0=monochrom 1=color
+ENDIF
